@@ -47,7 +47,7 @@ Persisted entities and relationships belong to [data-architecture.md](./data-arc
 - Authenticated state-changing requests require the session-bound `x-csrf-token` header. The CSRF endpoint rotates the token and invalidates the previously issued value.
 - Cookies use `SameSite` configuration, `Secure` in production and whenever `SameSite=None`, and optional `COOKIE_DOMAIN`. CORS allows credentials only for configured origins.
 - No asynchronous message broker, inter-service calls, retries, timeouts, circuit breakers, or service discovery were found.
-- A global session guard protects non-public routes; health and sign-in are explicitly public. Role and resource-ownership authorization are not yet implemented. No JWT or OAuth flow is used.
+- A global session guard protects non-public routes; health and sign-in are explicitly public. A shared role guard and fail-closed resource-ownership helper are implemented, but no business endpoint currently applies those policies. No JWT or OAuth flow is used.
 - CORS uses configured allowed origins. Helmet applies security headers, including Content Security Policy; HSTS is enabled only in production.
 - The global validation pipe transforms input and rejects undeclared fields; sign-in uses a validated DTO.
 - The default throttler limit is 100 requests per 60 seconds; sign-in is limited to five requests per minute and health skips throttling. No per-account policy is configured.

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { MailModule } from './infrastructure/mail/mail.module.js';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import Joi from 'joi';
 import { AuditoriaModule } from './modules/auditoria/auditoria.module.js';
@@ -36,10 +37,17 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
           .default('lax'),
         COOKIE_DOMAIN: Joi.string().allow('').default(''),
         TRUSTED_PROXY_CIDRS: Joi.string().allow('').default(''),
+        SMTP_HOST: Joi.string().allow('').optional(),
+        SMTP_PORT: Joi.number().port().default(587),
+        SMTP_USER: Joi.string().allow('').optional(),
+        SMTP_PASSWORD: Joi.string().allow('').optional(),
+        SMTP_FROM: Joi.string().pattern(/^[^\r\n]+$/).allow('').optional(),
+        SMTP_SECURE: Joi.boolean().default(false),
       }),
     }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     DatabaseModule,
+    MailModule,
     HealthModule,
     AuthModule,
     InvitacionesModule,

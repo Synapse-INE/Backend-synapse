@@ -1,14 +1,14 @@
 metadata:
-  generated: '2026-11-23'
+  generated: '2026-11-24'
   source_tasks: '.github/modernize/identity-access/plan.md'
-  last_updated: '2026-11-23'
+  last_updated: '2026-11-24'
 
 summary:
   total_tasks: 24
-  completed_tasks: 11
+  completed_tasks: 13
   in_progress_tasks: 0
-  pending_tasks: 13
-  completion_percentage: 45.8
+  pending_tasks: 11
+  completion_percentage: 54.2
 
 tasks:
   - task_id: 'T001'
@@ -306,15 +306,112 @@ tasks:
       requirements: ['REQ-005', 'REQ-006', 'REQ-007', 'REQ-016']
       full_trace: 'REQ-007 → Plan 3.1 → T013 → auth unit and E2E tests'
 
-pending_tasks:
   - task_id: 'T006'
-    description: 'Implement configurable SMTP adapter and test transport.'
-    blocked_by: []
-    priority: 'P1'
+    description: 'Implement configurable SMTP adapter and isolated test transport.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/infrastructure/mail/mail.service.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Adds configurable SMTP delivery and an isolated JSON test transport.'
+        - file: 'src/infrastructure/mail/mail.module.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Exports the adapter for onboarding features.'
+        - file: 'src/infrastructure/mail/mail.service.spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Tests test transport, missing configuration, and header injection rejection.'
+        - file: 'src/app.module.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Adds optional validated SMTP settings and registers MailModule.'
+        - file: '.env.example'
+          changes:
+            - change_type: 'modified'
+              description: 'Documents SMTP configuration without committing credentials.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm test'
+        passed: 37
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'Mail unit tests use Nodemailer JSON transport; no external mail is sent.'
+    upstream_trace:
+      plan_item: '1.2'
+      requirements: ['REQ-014']
+      full_trace: 'REQ-014 → Plan 1.2 → T006 → MailService'
   - task_id: 'T007'
-    description: 'Add role metadata and resource-ownership authorization helpers.'
-    blocked_by: []
-    priority: 'P1'
+    description: 'Add authenticated context, role guard, and fail-closed ownership helpers.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/common/auth/auth-context.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Defines shared user and ownership scope types.'
+        - file: 'src/common/auth/roles.decorator.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Defines route role metadata.'
+        - file: 'src/common/auth/roles.guard.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Enforces metadata roles and requires authenticated context.'
+        - file: 'src/common/auth/ownership.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Denies mismatched or missing resource owner IDs by default.'
+        - file: 'src/common/auth/roles.guard.spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Covers role allow/deny decisions, missing identity, and empty metadata.'
+        - file: 'src/common/auth/ownership.spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Covers matched and mismatched owner IDs for each supported scope.'
+        - file: 'src/modules/auth/auth.guard.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Attaches provider and institution scope IDs from the authenticated database record.'
+        - file: 'src/modules/auth/auth.guard.spec.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Verifies database-derived provider and institution ownership scope.'
+        - file: 'src/modules/auth/auth.module.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Registers the role guard globally.'
+        - file: 'src/modules/auth/auth.service.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Imports the authenticated user type from the shared common module.'
+        - file: 'src/modules/auth/auth.controller.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Imports the authenticated request type from the shared common module.'
+        - file: 'src/modules/auth/auth.types.ts'
+          changes:
+            - change_type: 'deleted'
+              description: 'Moves shared principal types to src/common/auth/auth-context.ts.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm test'
+        passed: 37
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'Build, lint, and E2E also pass; no business route consumes the authorization policies yet.'
+    upstream_trace:
+      plan_item: '1.2, 2.2'
+      requirements: ['REQ-008']
+      full_trace: 'REQ-008 → Plan 1.2/2.2 → T007 → shared authorization helpers'
+
+pending_tasks:
   - task_id: 'T014'
     description: 'Implement requester registration.'
     blocked_by: ['T006', 'T007']
@@ -407,5 +504,5 @@ validation:
   errors: []
   warnings:
     - 'The migration was validated in PGlite but has not been applied to deployment PostgreSQL.'
-    - 'The remaining onboarding and role/ownership tasks are pending.'
+    - 'Onboarding, audit integration, and endpoint-level authorization remain pending.'
   blocking_issues: []

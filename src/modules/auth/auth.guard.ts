@@ -9,9 +9,9 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import type { AuthenticatedRequest } from '../../common/auth/auth-context.js';
 import { hashToken } from './auth.service.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
-import type { AuthenticatedRequest } from './auth.types.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -51,6 +51,10 @@ export class AuthGuard implements CanActivate {
             nombre: true,
             estado: true,
             emailVerificadoEn: true,
+            proveedorId: true,
+            perfilSolicitante: {
+              select: { institucionId: true },
+            },
             roles: {
               select: {
                 rol: { select: { codigo: true } },
@@ -79,6 +83,12 @@ export class AuthGuard implements CanActivate {
         email: session.usuario.email,
         nombre: session.usuario.nombre,
         roles: session.usuario.roles.map(({ rol }) => rol.codigo),
+      },
+      ownership: {
+        usuarioId: session.usuario.id,
+        proveedorId: session.usuario.proveedorId ?? null,
+        institucionId:
+          session.usuario.perfilSolicitante?.institucionId ?? null,
       },
     };
 

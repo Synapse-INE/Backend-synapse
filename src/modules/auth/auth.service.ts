@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
-import type { AuthenticatedUser } from './auth.types.js';
+import type { AuthenticatedUser } from '../../common/auth/auth-context.js';
 
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$53PUPCI+M/TtKjVnO5JRpA$ko/LbHtOTytiF++bA/fQFp27BMb2iOQzQzcsuZ3N9lk';

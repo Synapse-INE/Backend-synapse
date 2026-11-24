@@ -4,6 +4,8 @@
 
 Se revisaron el catálogo del INE, los formatos S.00, S.11, S.21 y S.22 y la información normativa compartida. El esquema diferencia la solicitud general, los productos solicitados, las empresas propuestas para Subasta Electrónica Inversa y el expediente de cotizaciones para bienes importados.
 
+El diagrama ER con las 30 entidades persistidas y sus atributos está en [modelo-relacional-base-datos-v2.pdf](./modelo-relacional-base-datos-v2.pdf). Se generó desde [schema.prisma](../prisma/schema.prisma); identifica nombres de tablas y columnas, tipos, nulabilidad, claves e interrelaciones.
+
 ## Hallazgo sobre `Modalidad`
 
 El libro `INE-Precios de Referencia` contiene 7,788 filas de datos y 12 columnas, además de una fila de título y otra de encabezados. Las columnas B y E tienen ambas el encabezado `Modalidad`; sus valores son idénticos en las 7,788 filas. Se conserva el registro original íntegro para poder reexaminar ambas columnas, aunque una sola modalidad normalizada basta para la consulta.

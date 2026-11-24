@@ -140,8 +140,8 @@ test/
 - [x] T003 [Plan:1.1] Create a forward-safe Prisma migration that renames `USUARIO` to `SOLICITANTE` while preserving role assignments in `prisma/migrations/`.
 - [x] T004 [Plan:1.1,1.2] Validate migration behavior, token/session indexes, and privacy-gated identity storage in `test/`.
 - [x] T005 [Plan:1.1,1.2] Add validated environment settings in `src/app.module.ts` and the `argon2`, `nodemailer`, and `cookie-parser` dependencies in `package.json` and the lockfile.
-- [ ] T006 [Plan:1.2] Add the SMTP mail adapter with explicit configuration errors and a test transport in `src/infrastructure/mail/`.
-- [ ] T007 [Plan:1.2] Add shared authenticated-user context, role metadata, and ownership authorization helpers in `src/common/`.
+- [x] T006 [Plan:1.2] Add the configurable SMTP adapter, explicit configuration errors, and an isolated JSON test transport in `src/infrastructure/mail/`.
+- [x] T007 [Plan:1.2] Add shared authenticated-user and ownership context, role metadata/guard, and fail-closed ownership helpers in `src/common/auth/`.
 - [x] T008 [Plan:1.2] Add cookie, CSRF, trusted-proxy, and authentication rate-limit tests in `test/`.
 
 ## Phase 3: User Story 1 - Signing in securely (Priority: P1)

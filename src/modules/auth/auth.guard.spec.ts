@@ -92,6 +92,8 @@ describe('AuthGuard', () => {
       nombre: 'Requester',
       estado: 'ACTIVO',
       emailVerificadoEn: new Date(),
+      proveedorId: null,
+      perfilSolicitante: { institucionId: 'institution-id' },
       roles: [{ rol: { codigo: 'SOLICITANTE' } }],
     };
     prisma.sesionUsuario.findUnique.mockResolvedValue({
@@ -117,6 +119,11 @@ describe('AuthGuard', () => {
           email: user.email,
           roles: ['SOLICITANTE'],
         },
+        ownership: {
+          usuarioId: user.id,
+          proveedorId: null,
+          institucionId: 'institution-id',
+        },
       },
     });
 
@@ -140,6 +147,8 @@ describe('AuthGuard', () => {
             nombre: true,
             estado: true,
             emailVerificadoEn: true,
+            proveedorId: true,
+            perfilSolicitante: { select: { institucionId: true } },
             roles: { select: { rol: { select: { codigo: true } } } },
           },
         },

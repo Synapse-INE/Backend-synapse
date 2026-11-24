@@ -11,8 +11,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Response } from 'express';
+import type { AuthenticatedRequest } from '../../common/auth/auth-context.js';
 import { AuthService } from './auth.service.js';
-import type { AuthenticatedRequest } from './auth.types.js';
 import { Public } from './public.decorator.js';
 import { SignInDto } from './sign-in.dto.js';
 

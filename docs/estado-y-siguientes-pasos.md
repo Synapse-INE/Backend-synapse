@@ -1,29 +1,29 @@
 # Estado del proyecto y siguientes pasos
 
-**Corte:** 23 de noviembre de 2026
+**Corte:** 24 de noviembre de 2026
 **Propósito:** compartir el alcance actual con frontend y coordinar el trabajo pendiente. La distribución se hace por carga y disponibilidad de créditos de IA, no por nombres ni por roles numerados.
 
 ## Resumen ejecutivo
 
-El backend ya tiene una base NestJS con PostgreSQL y Prisma, un modelo para el catálogo del INE y los formularios S.00, S.11, S.21 y S.22. Está implementado el primer flujo de autenticación con sesiones, cookie y CSRF. Aún faltan registro, verificación de correo, invitaciones, revisión administrativa, endpoints de solicitudes e importación del Excel.
+El backend ya tiene una base NestJS con PostgreSQL y Prisma, un modelo para el catálogo del INE y los formularios S.00, S.11, S.21 y S.22. Están implementados el primer flujo de autenticación, el adaptador SMTP configurable y los controles compartidos de rol y propiedad. Aún faltan los flujos de registro, verificación de correo, invitaciones, revisión administrativa, endpoints de solicitudes e importación del Excel.
 
 ## Estado actual
 
 | Área                       | Estado                                                                                                                                                                                                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Estructura                 | NestJS, PostgreSQL, Prisma, endpoint de salud y configuración base listos.                                                                                                                                                                             |
-| Seguridad base             | Validación de solicitudes, Helmet, CORS con credenciales, límite general por IP y límite de inicio de sesión configurados. Sesiones opacas, cookie HttpOnly, CSRF y protección de rutas implementados; autorización por rol y propiedad aún pendiente. |
+| Seguridad base             | Validación, Helmet, CORS con credenciales, límites globales/inicio de sesión, sesiones opacas, cookie HttpOnly y CSRF implementados. Guard de roles y helper de propiedad listos; todavía no hay endpoints de negocio que los apliquen. |
 | Modelo de datos               | 30 modelos persistidos para identidad, proveedores, importaciones, referencias INE y solicitudes multproducto. |
 | Cuentas de solicitantes    | Institución, perfil y estado de aprobación incluidos en Prisma. Registro, verificación de correo y aprobación por endpoints aún pendientes.                                                                                                            |
 | Migraciones                | La migración de identidad agrega sesiones y perfiles y renombra `USUARIO` a `SOLICITANTE`; falta ejecutarla y verificarla en PostgreSQL del entorno.                                                                                                   |
 | Excel del INE              | Perfilado realizado; no se ha importado al catálogo ni existe aún el proceso de importación.                                                                                                                                                           |
 | Formularios oficiales      | Sus campos están representados en el modelo; faltan validaciones, flujos y endpoints.                                                                                                                                                                  |
 | Contrato HTTP y seguridad  | Salud, inicio/cierre de sesión, usuario actual y token CSRF documentados; los flujos de registro, solicitudes y demás operaciones siguen pendientes.                                                                                                   |
-| Plan de identidad y acceso | Especificación y plan preparados. La autenticación de la primera etapa está implementada; onboarding, roles, propiedad y auditoría siguen pendientes.                                                                                                  |
+| Plan de identidad y acceso | Autenticación, adaptador SMTP y controles comunes de rol/propiedad implementados. Registro, verificación, invitaciones, revisión administrativa, auditoría y aplicación de políticas a endpoints siguen pendientes. |
 | Frontend                   | Puede iniciar el diseño de formularios con el contrato de datos de este documento; no hay todavía API funcional de solicitudes.                                                                                                                        |
 | Publicación                | El modelo y las migraciones están confirmados en la rama de trabajo y sincronizados con su remoto. El estado del PR no se verificó; confirmar e incorporar los documentos de coordinación y contrato al PR correspondiente.                            |
 
-En este corte pasaron Prisma format/validate/generate, `npm test` (25 pruebas), `npm run test:e2e` (3 pruebas), build y lint. La prueba de migración con PGlite verifica el cambio de rol, la conservación de asignaciones, tablas e índices; no sustituye una validación en PostgreSQL del entorno de despliegue. La configuración de Docker Compose valida, pero no se verificó un despliegue real.
+En este corte pasaron `npm test` (37 pruebas), `npm run test:e2e` (3 pruebas), build y lint. La prueba de migración con PGlite verifica el cambio de rol, la conservación de asignaciones, tablas e índices; no sustituye una validación en PostgreSQL del entorno de despliegue. La configuración de Docker Compose valida, pero no se verificó un despliegue real.
 
 ## Hallazgos del catálogo del INE
 
@@ -40,12 +40,14 @@ La fila original se debe conservar completa durante la futura importación. No u
 ## Dónde consultar los objetos y atributos
 
 - [Modelo de datos y normalización](./modelo-datos.md): explicación funcional, atributos, datos faltantes, formularios y decisiones de normalización.
+- [Guía del MVP de Contrato Abierto](./guia-mvp-contrato-abierto.md): pantallas propuestas, flujo tipo ticket, entidades y rutas planificadas, distinguiendo lo existente de lo pendiente.
 - [Esquema Prisma](../prisma/schema.prisma): definición persistida de modelos, enums, tipos, nulabilidad y relaciones. Los nombres `camelCase` son la referencia inicial para el contrato JSON.
 - [Arquitectura de datos](../.github/modernize/assessment/engines/facts/data-architecture.md): relaciones entre entidades y límites actuales de persistencia.
 - [Contrato actual de API](../.github/modernize/assessment/engines/facts/api-service-contracts.md): servicios, endpoint disponible, comunicación y controles de seguridad existentes.
 - [Criterios de aceptación para APIs](./criterios-aceptacion-api.md): escenarios de seguridad y pruebas para los endpoints futuros; distingue lo configurado de lo pendiente.
 - [Especificación de identidad y acceso](../.github/modernize/identity-access/spec.md) y [plan de implementación](../.github/modernize/identity-access/plan.md): requisitos confirmados, tareas y bloqueos de despliegue.
 - [README del backend](../README.md): alcance implementado y pendientes de la API.
+- [Solicitud de apoyo para continuar el backend](./solicitud-apoyo-backend-carlos.md): tareas trazables y criterios de seguridad para la siguiente etapa.
 
 ### Contrato inicial para frontend
 
@@ -110,8 +112,8 @@ La resolución metodológica PDF compartida solo permitió extraer texto de mane
 | 1     | Aplicar y verificar la migración de identidad en PostgreSQL; configurar y probar los CIDR de proxy del despliegue.                               | Esquema actualizado y obtención verificable de IP cliente antes de tráfico real.        |
 | 2     | Compartir este documento, el modelo de datos y el contrato API de autenticación con frontend; distinguir endpoints existentes de los pendientes. | Integración del inicio y cierre de sesión sin asumir endpoints de solicitudes.          |
 | 3     | Confirmar los puntos abiertos con el INE y definir el correo y dominios de despliegue.                                                           | Reglas de envío, identidad y configuración claras antes de publicar.                    |
-| 4     | Implementar registro de solicitantes, verificación de correo, invitaciones de proveedores y aprobación administrativa.                           | Onboarding institucional con estados y tokens de un solo uso.                           |
-| 5     | Implementar autorización por rol y propiedad, auditoría de decisiones y protección de datos personales conforme al gate de privacidad.           | Acceso seguro y trazable para construir los demás flujos.                               |
+| 4     | Implementar registro de solicitantes, verificación de correo e invitaciones de proveedores usando SMTP y tokens de un solo uso.                  | Onboarding institucional con estados, límites y consumo atómico de tokens.              |
+| 5     | Implementar revisión administrativa y auditoría; aplicar los controles de rol/propiedad a cada endpoint y mantener DPI/CUI tras el gate de privacidad. | Acceso seguro y trazable para construir los demás flujos.                            |
 | 6     | Implementar importación del catálogo INE con conservación de encabezados repetidos y valores originales.                                         | Importación validable, reintentable y sin deduplicación por NOG.                        |
 | 7     | Implementar solicitudes, productos y adjuntos privados.                                                                                          | Flujo S.00 con validación de borrador/envío y acceso controlado.                        |
 | 8     | Implementar la matriz S.11 y confirmación de empresas por producto.                                                                              | Propuesta de proveedores trazable y revisable por personal autorizado.                  |
