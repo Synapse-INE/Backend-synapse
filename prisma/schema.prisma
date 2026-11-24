@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/infrastructure/database/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model InvitacionProveedor {
+  id         String    @id @default(uuid()) @db.Uuid
+  email      String    @db.VarChar(320)
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(64)
+  venceEn    DateTime  @map("vence_en") @db.Timestamptz(6)
+  aceptadaEn DateTime? @map("aceptada_en") @db.Timestamptz(6)
+  creadaEn   DateTime  @default(now()) @map("creada_en") @db.Timestamptz(6)
+
+  @@index([email])
+  @@map("invitaciones_proveedor")
+}
+
+model EventoAuditoria {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  accion    String   @db.VarChar(100)
+  recurso   String   @db.VarChar(100)
+  recursoId String?  @map("recurso_id") @db.VarChar(100)
+  metadatos Json?
+  creadoEn  DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  @@index([actorId, creadoEn])
+  @@index([recurso, recursoId, creadoEn])
+  @@map("eventos_auditoria")
+}
