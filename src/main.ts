@@ -1,8 +1,11 @@
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
+import type { Express } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
+import { isValidTrustedProxyCidr } from './infrastructure/security/trusted-proxy-cidr.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -14,7 +17,20 @@ async function bootstrap() {
     .map((origin) => origin.trim());
 
   app.setGlobalPrefix('api/v1');
-  app.enableCors({ origin: allowedOrigins });
+  app.enableCors({ origin: allowedOrigins, credentials: true });
+  app.use(cookieParser());
+  const trustedProxyCidrs = config
+    .getOrThrow<string>('TRUSTED_PROXY_CIDRS')
+    .split(',')
+    .map((cidr) => cidr.trim())
+    .filter(Boolean);
+  if (trustedProxyCidrs.some((cidr) => !isValidTrustedProxyCidr(cidr))) {
+    throw new Error('TRUSTED_PROXY_CIDRS contiene un CIDR no válido.');
+  }
+  if (trustedProxyCidrs.length > 0) {
+    const expressApp = app.getHttpAdapter().getInstance() as Express;
+    expressApp.set('trust proxy', trustedProxyCidrs);
+  }
   app.use(
     helmet({
       contentSecurityPolicy: {

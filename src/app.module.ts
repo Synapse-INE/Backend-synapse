@@ -23,6 +23,19 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
         PORT: Joi.number().port().default(3000),
         DATABASE_URL: Joi.string().min(1).required(),
         CORS_ORIGINS: Joi.string().min(1).default('http://localhost:5173'),
+        SESSION_TTL_SECONDS: Joi.number()
+          .integer()
+          .min(300)
+          .max(2_592_000)
+          .default(28_800),
+        SESSION_COOKIE_NAME: Joi.string()
+          .pattern(/^[A-Za-z0-9_-]+$/)
+          .default('ine_session'),
+        SESSION_COOKIE_SAME_SITE: Joi.string()
+          .valid('lax', 'strict', 'none')
+          .default('lax'),
+        COOKIE_DOMAIN: Joi.string().allow('').default(''),
+        TRUSTED_PROXY_CIDRS: Joi.string().allow('').default(''),
       }),
     }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),

@@ -1,0 +1,411 @@
+metadata:
+  generated: '2026-11-23'
+  source_tasks: '.github/modernize/identity-access/plan.md'
+  last_updated: '2026-11-23'
+
+summary:
+  total_tasks: 24
+  completed_tasks: 11
+  in_progress_tasks: 0
+  pending_tasks: 13
+  completion_percentage: 45.8
+
+tasks:
+  - task_id: 'T001'
+    description: 'Document security and onboarding environment settings.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: '.env.example'
+          changes:
+            - change_type: 'modified'
+              description: 'Added session, cookie, and trusted-proxy settings.'
+        - file: 'README.md'
+          changes:
+            - change_type: 'modified'
+              description: 'Documented the implemented authentication flow.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm run build'
+        passed: 1
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'Documentation reflects implemented routes and pending onboarding work.'
+    upstream_trace:
+      plan_item: '1.1'
+      requirements: ['REQ-007', 'REQ-015']
+      full_trace: 'REQ-007/REQ-015 → Plan 1.1 → T001 → README.md and .env.example'
+  - task_id: 'T002'
+    description: 'Add requester institution/profile, session, and approval persistence.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'prisma/schema.prisma'
+          changes:
+            - change_type: 'modified'
+              description: 'Added three identity models, approval state, and request institution relation.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npx prisma validate'
+        passed: 1
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'DPI/CUI field remains optional; no capture endpoint or encryption implementation is enabled.'
+    upstream_trace:
+      plan_item: '1.1'
+      requirements: ['REQ-003', 'REQ-006', 'REQ-009', 'REQ-010', 'REQ-011']
+      full_trace: 'REQ-006 → Plan 1.1 → T002 → prisma/schema.prisma'
+  - task_id: 'T003'
+    description: 'Create a forward-safe requester role rename migration.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'prisma/migrations/20261124030000_identity_access_sessions/migration.sql'
+          changes:
+            - change_type: 'created'
+              description: 'Renames USUARIO to SOLICITANTE without changing role IDs or assignment rows.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm test'
+        passed: 1
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'The PGlite migration test inserts an existing role assignment before applying the migration.'
+    upstream_trace:
+      plan_item: '1.1'
+      requirements: ['REQ-009']
+      full_trace: 'REQ-009 → Plan 1.1 → T003 → identity migration'
+  - task_id: 'T004'
+    description: 'Test migration behavior and identity persistence.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'test/identity-migration.spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Verifies tables, role assignment preservation, session indexes, and nullable DPI/CUI storage.'
+        - file: 'package.json'
+          changes:
+            - change_type: 'modified'
+              description: 'Added direct PGlite development dependency.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm test'
+        passed: 1
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'The isolated PGlite run is not a substitute for deployment PostgreSQL validation.'
+    upstream_trace:
+      plan_item: '1.1'
+      requirements: ['REQ-006', 'REQ-009', 'REQ-011', 'REQ-013']
+      full_trace: 'REQ-009 → Plan 1.1 → T004 → test/identity-migration.spec.ts'
+  - task_id: 'T005'
+    description: 'Add validated authentication configuration and dependencies.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/app.module.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Validates session TTL, cookie, and proxy environment settings.'
+        - file: 'src/main.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Configures credentialed CORS, cookie parser, and configured proxy trust.'
+        - file: 'package.json'
+          changes:
+            - change_type: 'modified'
+              description: 'Includes authentication and isolated migration-test dependencies.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm run build'
+        passed: 1
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'Proxy trust remains disabled unless explicit non-broad CIDRs are configured.'
+    upstream_trace:
+      plan_item: '1.1,1.2'
+      requirements: ['REQ-007', 'REQ-015']
+      full_trace: 'REQ-015 → Plan 1.2 → T005 → src/main.ts'
+  - task_id: 'T008'
+    description: 'Test cookie, CSRF, proxy, and authentication rate-limit controls.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/infrastructure/security/trusted-proxy-cidr.spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Tests accepted and rejected proxy ranges.'
+        - file: 'test/auth.e2e-spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Tests secure cookies, CSRF, session revocation, and spoofed forwarded-header throttling.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm run test:e2e; npm test'
+        passed: 28
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'No production proxy range was assumed or embedded.'
+    upstream_trace:
+      plan_item: '1.2'
+      requirements: ['REQ-007', 'REQ-015', 'REQ-016']
+      full_trace: 'REQ-016 → Plan 1.2 → T008 → test/auth.e2e-spec.ts'
+  - task_id: 'T009'
+    description: 'Implement Argon2id credential verification and generic failures.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/modules/auth/auth.service.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Normalizes email, verifies Argon2id, and returns a generic unauthorized response.'
+        - file: 'src/modules/auth/auth.service.spec.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Covers unknown email, invalid password, and non-active account.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm test'
+        passed: 25
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'Unknown emails use a dummy Argon2id hash to avoid an immediate timing distinction.'
+    upstream_trace:
+      plan_item: '2.1'
+      requirements: ['REQ-005']
+      full_trace: 'REQ-005 → Plan 2.1 → T009 → AuthService.signIn'
+  - task_id: 'T010'
+    description: 'Implement opaque, expiring, hashed, revocable sessions.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/modules/auth/auth.service.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Creates SHA-256 token hashes with configured expiry and revokes sessions.'
+        - file: 'src/modules/auth/auth.guard.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Rejects expired, revoked, or ineligible-account sessions.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm test; npm run test:e2e'
+        passed: 28
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'Session tokens are returned only through an HttpOnly cookie.'
+    upstream_trace:
+      plan_item: '2.1'
+      requirements: ['REQ-006', 'REQ-013']
+      full_trace: 'REQ-006 → Plan 2.1 → T010 → AuthService and AuthGuard'
+  - task_id: 'T011'
+    description: 'Implement CSRF token issue and validation bound to sessions.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/modules/auth/auth.service.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Issues CSRF tokens and persists only their hashes.'
+        - file: 'src/modules/auth/auth.guard.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Validates CSRF header hashes for authenticated writes.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm test; npm run test:e2e'
+        passed: 28
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'CSRF comparison uses fixed-length hashes and timing-safe equality.'
+    upstream_trace:
+      plan_item: '2.2'
+      requirements: ['REQ-007', 'REQ-013']
+      full_trace: 'REQ-007 → Plan 2.2 → T011 → AuthGuard CSRF validation'
+  - task_id: 'T012'
+    description: 'Implement authentication endpoints and response contracts.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/modules/auth/auth.controller.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Adds sign-in, current-user, CSRF, and logout routes.'
+        - file: 'src/modules/auth/sign-in.dto.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Validates the public sign-in request.'
+        - file: '.github/modernize/assessment/engines/facts/api-service-contracts.md'
+          changes:
+            - change_type: 'modified'
+              description: 'Documents current route contracts and security behavior.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm run test:e2e'
+        passed: 3
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'The health route remains public and the other routes require a valid session.'
+    upstream_trace:
+      plan_item: '3.1'
+      requirements: ['REQ-005', 'REQ-006', 'REQ-007', 'REQ-018']
+      full_trace: 'REQ-005 → Plan 3.1 → T012 → AuthController routes'
+  - task_id: 'T013'
+    description: 'Test sign-in and session lifecycle behavior.'
+    status: 'completed'
+    implementation:
+      files_changed:
+        - file: 'src/modules/auth/auth.service.spec.ts'
+          changes:
+            - change_type: 'modified'
+              description: 'Tests valid and generic failed sign-in behavior.'
+        - file: 'src/modules/auth/auth.guard.spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Tests missing, expired, and revoked sessions and CSRF denial.'
+        - file: 'src/modules/auth/auth.controller.spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Tests secure-cookie policy for production and SameSite=None.'
+        - file: 'test/auth.e2e-spec.ts'
+          changes:
+            - change_type: 'created'
+              description: 'Exercises authentication routes over HTTP.'
+    verification:
+      build_passed: true
+      test_results:
+        command: 'npm test; npm run test:e2e'
+        passed: 28
+        failed: 0
+        skipped: 0
+        failures: []
+      notes: 'Build and lint also pass.'
+    upstream_trace:
+      plan_item: '3.1'
+      requirements: ['REQ-005', 'REQ-006', 'REQ-007', 'REQ-016']
+      full_trace: 'REQ-007 → Plan 3.1 → T013 → auth unit and E2E tests'
+
+pending_tasks:
+  - task_id: 'T006'
+    description: 'Implement configurable SMTP adapter and test transport.'
+    blocked_by: []
+    priority: 'P1'
+  - task_id: 'T007'
+    description: 'Add role metadata and resource-ownership authorization helpers.'
+    blocked_by: []
+    priority: 'P1'
+  - task_id: 'T014'
+    description: 'Implement requester registration.'
+    blocked_by: ['T006', 'T007']
+    priority: 'P1'
+  - task_id: 'T015'
+    description: 'Implement email-verification tokens and SMTP delivery.'
+    blocked_by: ['T006', 'T014']
+    priority: 'P1'
+  - task_id: 'T016'
+    description: 'Implement privacy-gated DPI/CUI encryption and masking.'
+    blocked_by: ['T007']
+    priority: 'P1'
+  - task_id: 'T017'
+    description: 'Implement administrator provider invitations and acceptance.'
+    blocked_by: ['T006', 'T007']
+    priority: 'P1'
+  - task_id: 'T018'
+    description: 'Add onboarding and invitation E2E tests.'
+    blocked_by: ['T014', 'T015', 'T017']
+    priority: 'P1'
+  - task_id: 'T019'
+    description: 'Implement administrator requester review and role management.'
+    blocked_by: ['T007']
+    priority: 'P1'
+  - task_id: 'T020'
+    description: 'Audit review, invitation, role, and authorization events.'
+    blocked_by: ['T017', 'T019']
+    priority: 'P1'
+  - task_id: 'T021'
+    description: 'Implement one-time initial-administrator bootstrap.'
+    blocked_by: ['T007']
+    priority: 'P1'
+  - task_id: 'T022'
+    description: 'Add authorization and ownership tests.'
+    blocked_by: ['T019', 'T020']
+    priority: 'P1'
+  - task_id: 'T023'
+    description: 'Refresh API inventory and operational documentation as routes are implemented.'
+    blocked_by: ['T018', 'T019']
+    priority: 'P2'
+  - task_id: 'T024'
+    description: 'Run final end-to-end, deployment, and security readiness validation.'
+    blocked_by: ['T018', 'T019', 'T020', 'T021', 'T022', 'T023']
+    priority: 'P2'
+
+untracked_changes: []
+
+traceability_chain:
+  - chain_id: 'TRACE-AUTH'
+    requirement: 'REQ-005'
+    plan_phase: 'Phase 3'
+    plan_item: '2.1,3.1'
+    tasks: ['T009', 'T012', 'T013']
+    files:
+      - 'src/modules/auth/auth.service.ts'
+      - 'src/modules/auth/auth.controller.ts'
+    status: 'complete'
+  - chain_id: 'TRACE-SESSION'
+    requirement: 'REQ-006'
+    plan_phase: 'Phase 2 and Phase 3'
+    plan_item: '1.1,2.1,3.1'
+    tasks: ['T002', 'T003', 'T010', 'T013']
+    files:
+      - 'prisma/schema.prisma'
+      - 'prisma/migrations/20261124030000_identity_access_sessions/migration.sql'
+      - 'src/modules/auth/auth.service.ts'
+    status: 'complete'
+  - chain_id: 'TRACE-CSRF'
+    requirement: 'REQ-007'
+    plan_phase: 'Phase 2 and Phase 3'
+    plan_item: '1.2,2.2,3.1'
+    tasks: ['T008', 'T011', 'T012', 'T013']
+    files:
+      - 'src/modules/auth/auth.guard.ts'
+      - 'src/modules/auth/auth.controller.ts'
+      - 'test/auth.e2e-spec.ts'
+    status: 'complete'
+  - chain_id: 'TRACE-ROLE-RENAME'
+    requirement: 'REQ-009'
+    plan_phase: 'Phase 2'
+    plan_item: '1.1'
+    tasks: ['T003', 'T004']
+    files:
+      - 'prisma/migrations/20261124030000_identity_access_sessions/migration.sql'
+      - 'test/identity-migration.spec.ts'
+    status: 'complete'
+
+validation:
+  passed: true
+  errors: []
+  warnings:
+    - 'The migration was validated in PGlite but has not been applied to deployment PostgreSQL.'
+    - 'The remaining onboarding and role/ownership tasks are pending.'
+  blocking_issues: []
