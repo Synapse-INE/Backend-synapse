@@ -12,15 +12,38 @@ El backend ya tiene una base NestJS con PostgreSQL y Prisma, y un modelo de dato
 | Área | Estado |
 |---|---|
 | Estructura | NestJS, PostgreSQL, Prisma, endpoint de salud y configuración base listos. |
-| Seguridad base | Validación de solicitudes, Helmet, CORS y límite general por IP configurados. Autenticación, autorización y controles por propietario aún pendientes. |
+| Seguridad base | Validación de solicitudes, Helmet, CORS con credenciales, límite general por IP, login con Argon2id, JWT en cookie HttpOnly, refresh rotativo, CSRF y guards de rol listos. Los controles por propietario siguen pendientes. |
 | Modelo de datos | 27 modelos persistidos para identidad, proveedores, importaciones, referencias INE y solicitudes multproducto. |
 | Migraciones | Esquema y migraciones preparados; aplicados en una prueba temporal compatible con PostgreSQL. |
-| Excel del INE | Perfilado realizado; no se ha importado al catálogo ni existe aún el proceso de importación. |
+| Excel del INE | Perfilado realizado e importador CLI XLSX disponible; conserva staging, encabezados repetidos, filas originales, alias revisables y motivos de validación. |
 | Formularios oficiales | Sus campos están representados en el modelo; faltan validaciones, flujos y endpoints. |
 | Frontend | Puede iniciar el diseño de formularios con el contrato de datos de este documento; no hay todavía API funcional de solicitudes. |
-| Publicación | El modelo y las migraciones están confirmados en la rama de trabajo y sincronizados con su remoto. El estado del PR no se verificó; este documento nuevo todavía está sin commit. |
+| Publicación | El modelo y las migraciones están confirmados en la rama de trabajo y sincronizados con su remoto. La entrega de auth e importador INE se registra en [trazabilidad.md](./trazabilidad.md) (rama `feat/auth-importerExcel`). |
 
 Verificaciones pasadas: Prisma format/validate/generate, pruebas unitarias, pruebas E2E, build, lint y una prueba de migraciones con PGlite. La prueba no sustituye una validación contra el PostgreSQL del entorno de despliegue. La configuración de Docker Compose valida, pero no se verificó un despliegue real.
+
+## Entregas registradas en este corte
+
+### Autenticación, autorización y protección de solicitudes
+
+- Se añadió `SesionAutenticacion` y la migración `20261124030000_auth_sessions`. Solo se almacenan hashes SHA-256 del refresh token y del token CSRF; un refresh rotado o reutilizado revoca las sesiones activas del usuario.
+- `POST /api/v1/auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` y `GET /auth/csrf` ya están disponibles. Las contraseñas se verifican con Argon2id, el access token dura 15 minutos y tanto access como refresh se entregan en cookies `HttpOnly`, `SameSite=Strict`.
+- Los endpoints son privados por defecto mediante guards globales. `GET /salud` y los pasos de inicio o renovación de sesión están marcados explícitamente como públicos. `@Autorizado(...)` compone la verificación de rol; el guard CSRF global protege toda operación insegura que no tenga una excepción explícita.
+- Todas las operaciones que cambien estado requieren el header configurado `AUTH_CSRF_HEADER_NAME` con el mismo valor que la cookie CSRF; la renovación comprueba además el hash vinculado a la sesión. Los errores HTTP siguen RFC 7807 con `code` estable.
+- Se añadió IP opcional a los eventos de auditoría y se auditan login, refresh y logout. El proxy solo se confía cuando `CF_TRUSTED_PROXY=true`; dicha variable debe habilitarse únicamente si el acceso directo al API está restringido.
+
+### Importador del catálogo oficial INE
+
+- Se añadió el comando `npm run import:ine -- --archivo <ruta.xlsx> [--usuario-id <uuid>]`. Comprueba extensión, firma ZIP/XLSX, límite de tamaño, encabezados requeridos y SHA-256 antes de crear el lote.
+- Cada fila se guarda completa en `FilaImportacionINE.datosOriginales`, incluyendo las dos columnas `Modalidad`; no se deduplica por NOG, correlativo ni producto. La repetición exacta de un archivo devuelve el lote existente por hash.
+- La normalización conserva los originales y usa columnas consultables para importes con tres decimales, fechas, marcadores `NA`/`Sin Dato`, modalidades canónicas y alias pendientes de revisión. Las filas con valores problemáticos quedan en `REVISAR` con códigos de validación, sin borrarlas ni forzar valores inventados.
+- El proceso es deliberadamente CLI por ahora: no expone rutas de archivos del servidor ni carga multipart hasta contar con un flujo HTTP protegido, almacenamiento privado y reglas operativas confirmadas.
+
+### Verificación de esta entrega
+
+- Ejecutados correctamente: `prisma validate`, `npm run build`, `npm test` (7 pruebas), `npm run test:e2e` (2 pruebas), `npm run lint` y `git diff --check`.
+- La prueba del importador abre el XLSX oficial compartido y procesa sus 7,788 filas con un adaptador de persistencia simulado; se comprobaron las 12 columnas fuente y los dos encabezados `Modalidad`.
+- No se pudo aplicar la migración ni ejecutar el importador contra PostgreSQL real en esta estación: no hay servicio accesible en `localhost:5432` y Docker no está disponible. Antes de desplegar se debe ejecutar `npm run db:migrate:deploy` con las variables de `.env` reales y realizar una carga de aceptación.
 
 ## Hallazgos del catálogo del INE
 
@@ -82,8 +105,8 @@ La resolución metodológica PDF compartida solo permitió extraer texto de mane
 |---|---|---|
 | 1 | Compartir este documento y el modelo de datos con frontend; acordar campos, enum, nulabilidad y formatos JSON. | Formularios alineados con las entidades persistidas, sin asumir endpoints inexistentes. |
 | 2 | Resolver las cuatro decisiones anteriores con el equipo y, cuando corresponda, con el INE. | Reglas de envío y estados claros antes de codificar validaciones. |
-| 3 | Implementar autenticación, verificación de correo, invitaciones y autorización por rol/propietario. | Acceso seguro que permita construir los demás flujos. |
-| 4 | Implementar importación del catálogo INE con conservación de encabezados repetidos y valores originales. | Importación validable, reintentable y sin deduplicación por NOG. |
+| 3 | Completar registro, verificación de correo, invitaciones y autorización por propietario sobre la base de auth/guards ya implementada. | Acceso seguro completo para los demás flujos. |
+| 4 | Exponer y operar el importador del catálogo INE ya implementado por CLI, si se confirma una carga HTTP segura. | Importación validable, reintentable y sin deduplicación por NOG. |
 | 5 | Implementar solicitudes, productos, adjuntos privados y auditoría de cambios. | Flujo S.00 con validación de borrador/envío y acceso controlado. |
 | 6 | Implementar la matriz S.11 y confirmación de empresas por producto. | Propuesta de proveedores trazable y revisable por personal autorizado. |
 | 7 | Implementar el expediente de comisión y captura de cotizaciones S.21/S.22. | Representantes, documentos, cotizaciones y componentes de costo por producto. |
