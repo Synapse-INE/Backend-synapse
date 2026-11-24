@@ -1,9 +1,34 @@
+# Dependencias
+node_modules/
+
+# Compilación y TypeScript
+dist/
+build/
+*.tsbuildinfo
+
+# Variables de entorno
 .env
 .env.*
 !.env.example
-node_modules/
-dist/
-coverage/
+
+# Prisma y Base de datos local
 src/infrastructure/database/generated/
-*.tsbuildinfo
 prisma/*.db
+prisma/*.db-journal
+
+# Testing y cobertura
+coverage/
+
+# Logs y caché
+logs/
+*.log
+npm-debug.log*
+.eslintcache
+
+# Sistema operativo e IDEs
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/

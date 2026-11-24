@@ -58,11 +58,12 @@ La configuración local se define en `.env`. `.env.example` contiene los valores
       database/             Conexión y servicio de Prisma
     modules/
       health/               Estado de la API
-      auth/                 Módulo inicial
+      auth/                 Sesiones, JWT y guards reutilizables
       invitaciones/         Módulo inicial
       auditoria/            Módulo inicial
       adjuntos/             Módulo inicial
       integraciones/        Módulo inicial
+      referencias-ine/      Importación y normalización del catálogo oficial
   test/                     Pruebas de extremo a extremo
 ```
 
@@ -75,9 +76,14 @@ Los módulos identificados como iniciales definen la estructura de NestJS; sus o
 - Validación global de solicitudes con rechazo de propiedades no declaradas.
 - Helmet con Content Security Policy, protección contra framing, `X-Content-Type-Options`, `Referrer-Policy` y HSTS en producción.
 - Límite general de 100 solicitudes por minuto.
+- Autenticación con Argon2id, access token de 15 minutos en cookie `HttpOnly`, refresh token rotativo persistido y detección de reutilización.
+- `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` y `GET /auth/csrf`; CORS con credenciales y token CSRF de doble envío validado contra la sesión.
+- Guards reutilizables `JwtAccessGuard`, `RolesGuard`, `CsrfGuard`, decoradores `@Roles()` y `@Autorizado()`; los roles se revalidan desde la base de datos en cada solicitud protegida.
+- Errores HTTP en formato Problem Details con un `code` estable.
 - Esquema Prisma y migraciones para usuarios, roles, proveedores, invitaciones, verificación de correo y bitácora.
 - Catálogo de productos de proveedor con historial de precios e importaciones con filas fuente y estado de validación.
 - Importaciones del catálogo del INE con conservación de encabezados y filas originales, modalidades canónicas y sus alias.
+- Importador CLI XLSX para el catálogo INE: valida firma, tamaño y encabezados, conserva ambas columnas `Modalidad`, normaliza datos a staging y marca observaciones sin eliminar la fuente.
 - Solicitudes vinculadas a una cuenta, con modalidad, productos, código SIGES y adjuntos tipificados.
 - Persistencia para empresas propuestas por producto en Subasta Electrónica Inversa y expedientes de comisión, representantes y cotizaciones para bienes importados.
 - Roles iniciales `ADMIN`, `TRABAJADOR_INE`, `PROVEEDOR` y `USUARIO`; tipos canónicos iniciales para modalidad de compra.
@@ -88,11 +94,21 @@ Los módulos identificados como iniciales definen la estructura de NestJS; sus o
 
 ## Pendiente
 
-Aunque las entidades ya están definidas, todavía faltan los servicios HTTP de registro, inicio de sesión, verificación de correo, invitaciones, autorización por rol y propiedad del proveedor, auditoría, importación de archivos, adjuntos y gestión de solicitudes. JWT, protección CSRF, límites por usuario, Turnstile, correo, búsqueda web, proveedores de IA, análisis y generación de informes también están pendientes.
+Aunque las entidades ya están definidas, todavía faltan los servicios HTTP de registro, verificación de correo, invitaciones, autorización por propietario del proveedor, adjuntos y gestión de solicitudes. El importador actual se ejecuta por CLI, no expone aún una carga HTTP. Los límites por usuario, Turnstile, correo, búsqueda web, proveedores de IA, análisis y generación de informes también están pendientes.
 
 La normalización y los atributos de cada entidad se documentan en [docs/modelo-datos.md](./docs/modelo-datos.md). El catálogo perfilado tiene 7,788 filas; sus dos columnas `Modalidad` coinciden y NOG se repite, por lo que se conservan los datos originales sin usar NOG como clave. El esquema define persistencia, no los servicios de validación ni el reemplazo de la entrega física que exige el INE.
 
 Antes de habilitar tráfico real detrás de un proxy, hay que configurar y verificar la obtención de la IP del cliente. El límite actual es general y no sustituye los controles específicos por usuario o por operación.
+
+## Importar el catálogo INE
+
+Con la base de datos migrada y las variables del archivo `.env` configuradas, importa un XLSX mediante:
+
+```powershell
+npm run import:ine -- --archivo "C:\Users\Carlos\Downloads\INE-Precios de Referencia.xlsx" --usuario-id <uuid-del-actor>
+```
+
+`--usuario-id` es opcional para una carga técnica. El hash SHA-256 hace idempotente una repetición exacta del mismo archivo; si ya existe, el comando devuelve el resumen del lote previo. Las filas con observaciones se conservan en staging y las referencias sin un importe válido quedan fuera de futuras estadísticas de precios.
 
 ## Verificación
 

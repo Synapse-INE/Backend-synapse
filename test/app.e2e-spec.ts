@@ -8,6 +8,9 @@ describe('GET /api/v1/salud', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.JWT_ACCESS_SECRET ??=
+      'solo-para-pruebas-no-usar-en-produccion';
     process.env.DATABASE_URL ??=
       'postgresql://precios:precios@localhost:5432/precios';
     const moduleRef = await Test.createTestingModule({
@@ -28,5 +31,9 @@ describe('GET /api/v1/salud', () => {
       estado: 'ok',
       servicio: 'portal-precios-api',
     });
+  });
+
+  it('blocks protected endpoints without an access cookie', async () => {
+    await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
   });
 });
