@@ -75,3 +75,14 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - Defecto hallado y corregido: `npm run import:ine` usaba `tsx`, que no emite metadatos de decoradores, y fallaba al inyectar dependencias. Ahora compila con `nest build` y ejecuta `dist/`.
 - Limitación conocida: `npm run` en Windows divide rutas con espacios.
 - Pendiente: revisar los 903 casos `REVISAR` (fechas no interpretables) y confirmar o rechazar los 492 alias pendientes.
+
+## 2026-11-24 — Documentación OpenAPI completa y backlog del backend
+
+**Rama:** `docs/openapi-completo`
+
+- OpenAPI describe los 19 endpoints: etiquetas por área, resúmenes y descripciones, ejemplos de respuesta, errores `application/problem+json` con su `code`, y los dos esquemas de seguridad (cookie de sesión y encabezado `x-csrf-token`). Los esquemas de entrada se generan desde los DTO con el plugin de compilación de `@nestjs/swagger`.
+- Decoradores reutilizables en `src/infrastructure/openapi/decoradores.ts` (`ApiProtegido`, `ApiProblema`, `ApiLimite`).
+- `test/openapi.e2e-spec.ts` verifica la lista exacta de operaciones y su seguridad; falla si se añade un endpoint sin documentar o se documenta uno inexistente.
+- README: tabla completa de endpoints, secciones de registro, solicitudes y errores (que se habían perdido en una fusión) y sección de pendientes.
+- Nuevo [backlog-backend.md](./backlog-backend.md) con los ítems B-01 a B-14, su orden, las decisiones del INE que los bloquean y la definición de «backend terminado».
+- Actualizados `estado-y-siguientes-pasos.md`, `criterios-aceptacion-api.md` y `api-service-contracts.md`.

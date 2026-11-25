@@ -12,10 +12,10 @@ El inventario técnico de la superficie actual está en [API & Service Communica
 |---|---|---|
 | `GET /api/v1/salud` | Responde HTTP 200 con `estado` y `servicio`; no revela configuración ni datos internos. | Implementado; cubierto por la prueba E2E existente. |
 | CORS | Solo permite los orígenes configurados. | Configurado; falta una prueba de integración que verifique origen permitido y denegado. |
-| Validación de entrada | El pipe global transforma los DTO y rechaza propiedades no declaradas. | Configurado; no hay DTO de negocio que lo ejercite todavía. |
+| Validación de entrada | El pipe global transforma los DTO y rechaza propiedades no declaradas; los errores salen como `VALIDACION_FALLIDA` (RFC 7807). | Implementado y ejercitado por los DTO de registro, invitaciones y solicitudes. |
 | Límite general | El límite predeterminado es 100 solicitudes por minuto; salud lo omite. | Configurado; falta validar el comportamiento detrás del proxy de producción. |
-| Autenticación, autorización y controles de propietario | Las rutas protegidas requieren identidad y permisos aplicables al recurso. | Pendiente; no hay rutas de negocio. |
-| Registro externo | Proveedores por invitación; solicitantes con verificación de correo y aprobación manual previa al envío. | Acordado; los flujos y endpoints aún no están implementados. |
+| Autenticación, autorización y controles de propietario | Las rutas protegidas requieren identidad y permisos aplicables al recurso. | Implementado en solicitudes S.00 con pruebas unitarias y de humo; debe aplicarse a cada ruta nueva (adjuntos, S.11, S.21 y S.22). |
+| Registro externo | Proveedores por invitación; solicitantes con verificación de correo y aprobación manual previa al envío. | Implementado y verificado contra PostgreSQL (ver README). Falta recuperación de contraseña. |
 
 ## Escenarios para futuras APIs
 
