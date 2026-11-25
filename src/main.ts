@@ -73,13 +73,7 @@ async function bootstrap() {
     // Swagger UI needs inline initialization scripts; keep this exception on its opt-in route only.
     (isSwaggerUi ? swaggerHelmet : apiHelmet)(request, response, next);
   });
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  app.useGlobalPipes(crearValidationPipe());
 
   if (swaggerEnabled) {
     setupSwagger(app, config.getOrThrow<string>('SESSION_COOKIE_NAME'));

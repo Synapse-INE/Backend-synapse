@@ -64,3 +64,14 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - Decisiones aplicadas según la documentación, pendientes de confirmar con el INE: mínimo de cotizaciones por producto (aún no aplicado, pertenece a S.11/S.21), Contrato Abierto como copia digital dirigida a la DGAE, y estados por rol como se describe arriba.
 - Verificación: 80 pruebas unitarias/e2e y una prueba de humo contra PostgreSQL real (creación, 422 de envío incompleto, aislamiento entre instituciones y personal, doble envío, saltos de estado y auditoría).
 - Pendiente: adjuntos privados, S.11 (proveedores por producto), S.21/S.22, y borrado de borradores.
+
+## 2026-11-24 — Validación contra PostgreSQL real
+
+**Rama:** `fix/importador-compilado`
+
+- PostgreSQL 16 (`pgvector/pgvector:pg16`) levantado con `infra/docker-compose.yml`; las 4 migraciones se aplicaron con `npm run db:migrate:deploy` sin errores.
+- Importación del libro oficial: 7,788 filas leídas, 6,885 `NORMALIZADA` y 903 `REVISAR` (898 `FECHA_INVALIDA`, 5 `PRECIO_AUSENTE`), 0 rechazadas; 7,788 filas en `referencias_ine`. Alias de modalidad: 492 `PENDIENTE` y 3 `CONFIRMADO`.
+- Una segunda ejecución con el mismo archivo devolvió el mismo lote (`yaExistia: true`), lo que confirma la idempotencia por hash.
+- Defecto hallado y corregido: `npm run import:ine` usaba `tsx`, que no emite metadatos de decoradores, y fallaba al inyectar dependencias. Ahora compila con `nest build` y ejecuta `dist/`.
+- Limitación conocida: `npm run` en Windows divide rutas con espacios.
+- Pendiente: revisar los 903 casos `REVISAR` (fechas no interpretables) y confirmar o rechazar los 492 alias pendientes.
