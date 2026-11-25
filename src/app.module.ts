@@ -11,6 +11,7 @@ import { AdjuntosModule } from './modules/adjuntos/adjuntos.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { IntegracionesModule } from './modules/integraciones/integraciones.module.js';
 import { RegistroModule } from './modules/registro/registro.module.js';
+import { SolicitudesModule } from './modules/solicitudes/solicitudes.module.js';
 import { SolicitantesModule } from './modules/solicitantes/solicitantes.module.js';
 import { InvitacionesModule } from './modules/invitaciones/invitaciones.module.js';
 import { ReferenciasINEModule } from './modules/referencias-ine/referencias-ine.module.js';
@@ -68,6 +69,7 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
     InvitacionesModule,
     RegistroModule,
     SolicitantesModule,
+    SolicitudesModule,
     AuditoriaModule,
     AdjuntosModule,
     IntegracionesModule,

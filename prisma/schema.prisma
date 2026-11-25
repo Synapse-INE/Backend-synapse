@@ -68,6 +68,7 @@ enum EstadoFilaImportacion {
 }
 
 enum EstadoSolicitud {
+  BORRADOR
   RECIBIDA
   EN_REVISION
   EN_ANALISIS
@@ -544,6 +545,7 @@ model SolicitudPrecio {
   autoridadCargo           String?             @map("autoridad_cargo") @db.VarChar(160)
   estado                   EstadoSolicitud     @default(RECIBIDA)
   creadaPorId              String              @map("creada_por_id") @db.Uuid
+  enviadaEn                DateTime?           @map("enviada_en") @db.Timestamptz(6)
   createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
