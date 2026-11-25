@@ -10,6 +10,7 @@ import { AdjuntosModule } from './modules/adjuntos/adjuntos.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { IntegracionesModule } from './modules/integraciones/integraciones.module.js';
 import { InvitacionesModule } from './modules/invitaciones/invitaciones.module.js';
+import { ReferenciasINEModule } from './modules/referencias-ine/referencias-ine.module.js';
 import { DatabaseModule } from './infrastructure/database/database.module.js';
 
 @Module({
@@ -41,8 +42,15 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
         SMTP_PORT: Joi.number().port().default(587),
         SMTP_USER: Joi.string().allow('').optional(),
         SMTP_PASSWORD: Joi.string().allow('').optional(),
-        SMTP_FROM: Joi.string().pattern(/^[^\r\n]+$/).allow('').optional(),
+        SMTP_FROM: Joi.string()
+          .pattern(/^[^\r\n]+$/)
+          .allow('')
+          .optional(),
         SMTP_SECURE: Joi.boolean().default(false),
+        IMPORT_INE_MAX_FILE_BYTES: Joi.number()
+          .integer()
+          .min(1_048_576)
+          .default(52_428_800),
       }),
     }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
@@ -54,6 +62,7 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
     AuditoriaModule,
     AdjuntosModule,
     IntegracionesModule,
+    ReferenciasINEModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

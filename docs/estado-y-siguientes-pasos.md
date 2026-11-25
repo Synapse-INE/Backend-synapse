@@ -5,25 +5,46 @@
 
 ## Resumen ejecutivo
 
-El backend ya tiene una base NestJS con PostgreSQL y Prisma, un modelo para el catálogo del INE y los formularios S.00, S.11, S.21 y S.22. Están implementados el primer flujo de autenticación, el adaptador SMTP configurable y los controles compartidos de rol y propiedad. Aún faltan los flujos de registro, verificación de correo, invitaciones, revisión administrativa, endpoints de solicitudes e importación del Excel.
+El backend ya tiene una base NestJS con PostgreSQL y Prisma, un modelo para el catálogo del INE y los formularios S.00, S.11, S.21 y S.22. Están implementados el inicio de sesión con sesiones opacas, el adaptador SMTP, los controles compartidos de rol y propiedad y un importador CLI del catálogo del INE. Aún faltan los flujos de registro, verificación de correo, invitaciones, revisión administrativa y los endpoints de solicitudes.
 
 ## Estado actual
 
-| Área                       | Estado                                                                                                                                                                                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Estructura                 | NestJS, PostgreSQL, Prisma, endpoint de salud y configuración base listos.                                                                                                                                                                             |
-| Seguridad base             | Validación, Helmet, CORS con credenciales, límites globales/inicio de sesión, sesiones opacas, cookie HttpOnly y CSRF implementados. Guard de roles y helper de propiedad listos; todavía no hay endpoints de negocio que los apliquen. |
-| Modelo de datos               | 30 modelos persistidos para identidad, proveedores, importaciones, referencias INE y solicitudes multproducto. |
-| Cuentas de solicitantes    | Institución, perfil y estado de aprobación incluidos en Prisma. Registro, verificación de correo y aprobación por endpoints aún pendientes.                                                                                                            |
-| Migraciones                | La migración de identidad agrega sesiones y perfiles y renombra `USUARIO` a `SOLICITANTE`; falta ejecutarla y verificarla en PostgreSQL del entorno.                                                                                                   |
-| Excel del INE              | Perfilado realizado; no se ha importado al catálogo ni existe aún el proceso de importación.                                                                                                                                                           |
-| Formularios oficiales      | Sus campos están representados en el modelo; faltan validaciones, flujos y endpoints.                                                                                                                                                                  |
-| Contrato HTTP y seguridad  | Salud, inicio/cierre de sesión, usuario actual y token CSRF documentados; los flujos de registro, solicitudes y demás operaciones siguen pendientes.                                                                                                   |
-| Plan de identidad y acceso | Autenticación, adaptador SMTP y controles comunes de rol/propiedad implementados. Registro, verificación, invitaciones, revisión administrativa, auditoría y aplicación de políticas a endpoints siguen pendientes. |
-| Frontend                   | Puede iniciar el diseño de formularios con el contrato de datos de este documento; no hay todavía API funcional de solicitudes.                                                                                                                        |
-| Publicación                | El modelo y las migraciones están confirmados en la rama de trabajo y sincronizados con su remoto. El estado del PR no se verificó; confirmar e incorporar los documentos de coordinación y contrato al PR correspondiente.                            |
+| Área | Estado |
+|---|---|
+| Estructura | NestJS, PostgreSQL, Prisma, endpoint de salud y configuración base listos. |
+| Seguridad base | Validación de solicitudes, Helmet, CORS con credenciales, límites globales y de inicio de sesión, sesiones opacas en cookie HttpOnly y protección CSRF implementados. Guard de roles y helper de propiedad listos; aún no hay endpoints de negocio que los apliquen. |
+| Modelo de datos | Entidades persistidas para identidad, solicitantes, proveedores, importaciones, referencias INE y formularios multproducto. |
+| Cuentas de solicitantes | Institución, perfil y estado de aprobación incluidos en Prisma. Registro, verificación y aprobación por endpoints pendientes. |
+| Migraciones | La migración de identidad crea sesiones y perfiles y renombra `USUARIO` a `SOLICITANTE`. La prueba con PGlite no sustituye la aplicación y validación en PostgreSQL del entorno. |
+| Excel del INE | Importador CLI XLSX disponible; conserva encabezados y filas originales, modalidades repetidas, alias y observaciones. La carga de aceptación en PostgreSQL está pendiente. |
+| Formularios oficiales | Sus campos están representados en el modelo; faltan validaciones, flujos y endpoints. |
+| Contrato HTTP y seguridad | Salud, inicio/cierre de sesión, usuario actual y token CSRF documentados; los flujos de registro, solicitudes y demás operaciones siguen pendientes. |
+| Plan de identidad y acceso | Inicio de sesión, SMTP y controles comunes de rol/propiedad implementados. Registro, verificación, invitaciones, revisión administrativa y aplicación de políticas a endpoints siguen pendientes. |
+| Frontend | Puede iniciar el diseño de formularios con el contrato de datos de este documento; todavía no hay API funcional de solicitudes. |
+| Publicación | Verificar el estado del PR y confirmar que las migraciones y documentos vigentes estén incluidos antes de desplegar. |
 
-En este corte pasaron `npm test` (37 pruebas), `npm run test:e2e` (3 pruebas), build y lint. La prueba de migración con PGlite verifica el cambio de rol, la conservación de asignaciones, tablas e índices; no sustituye una validación en PostgreSQL del entorno de despliegue. La configuración de Docker Compose valida, pero no se verificó un despliegue real.
+Tras integrar los cambios pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas), `npm run lint`, `npx prisma validate` y `git diff --check`. La ejecución de pruebas se limitó a un worker por la memoria disponible. La prueba de migración con PGlite verifica el cambio de rol y la conservación de datos; no sustituye una validación en PostgreSQL del entorno de despliegue. No se verificó un despliegue real.
+
+## Entregas registradas en este corte
+
+### Autenticación, autorización y protección de solicitudes
+
+- Se mantiene `SesionUsuario` con la migración `20261124030000_identity_access_sessions`. La base de datos conserva hashes SHA-256 de los tokens de sesión y CSRF; la cookie de sesión es `HttpOnly`, revocable y tiene expiración configurable.
+- `POST /api/v1/auth/iniciar-sesion`, `GET /api/v1/auth/yo`, `GET /api/v1/auth/csrf` y `POST /api/v1/auth/cerrar-sesion` están disponibles. Las contraseñas se verifican con Argon2id y el error de credenciales es genérico.
+- Las rutas son privadas por defecto. Salud e inicio de sesión son explícitamente públicos; `AuthGuard` valida sesión y CSRF para solicitudes que modifican estado. El guard de roles y el helper de propiedad están listos para aplicarse a las operaciones de negocio.
+- La confianza en proxy se configura mediante `TRUSTED_PROXY_CIDRS` con CIDR validados; no se activa automáticamente.
+
+### Importador del catálogo oficial INE
+
+- Se añadió el comando `npm run import:ine -- --archivo <ruta.xlsx> [--usuario-id <uuid>]`. Comprueba extensión, firma ZIP/XLSX, límite de tamaño, encabezados requeridos y SHA-256 antes de crear el lote.
+- Cada fila se guarda completa en `FilaImportacionINE.datosOriginales`, incluyendo las dos columnas `Modalidad`; no se deduplica por NOG, correlativo ni producto. La repetición exacta de un archivo devuelve el lote existente por hash.
+- La normalización conserva los originales y usa columnas consultables para importes con tres decimales, fechas, marcadores `NA`/`Sin Dato`, modalidades canónicas y alias pendientes de revisión. Las filas con valores problemáticos quedan en `REVISAR` con códigos de validación, sin borrarlas ni forzar valores inventados.
+- El proceso es deliberadamente CLI por ahora: no expone rutas de archivos del servidor ni carga multipart hasta contar con un flujo HTTP protegido, almacenamiento privado y reglas operativas confirmadas.
+
+### Verificación de esta entrega
+
+- La prueba del importador genera un XLSX temporal representativo y verifica las 12 columnas fuente, los dos encabezados `Modalidad` y el importe normalizado. No depende de archivos en rutas locales.
+- La carga real del catálogo en PostgreSQL no se ha ejecutado. Antes de desplegar se debe aplicar `npm run db:migrate:deploy` con variables de entorno reales y realizar una carga de aceptación.
 
 ## Hallazgos del catálogo del INE
 
@@ -107,19 +128,19 @@ La resolución metodológica PDF compartida solo permitió extraer texto de mane
 
 ## Siguientes pasos
 
-| Orden | Trabajo                                                                                                                                          | Resultado esperado                                                                      |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| 1     | Aplicar y verificar la migración de identidad en PostgreSQL; configurar y probar los CIDR de proxy del despliegue.                               | Esquema actualizado y obtención verificable de IP cliente antes de tráfico real.        |
-| 2     | Compartir este documento, el modelo de datos y el contrato API de autenticación con frontend; distinguir endpoints existentes de los pendientes. | Integración del inicio y cierre de sesión sin asumir endpoints de solicitudes.          |
-| 3     | Confirmar los puntos abiertos con el INE y definir el correo y dominios de despliegue.                                                           | Reglas de envío, identidad y configuración claras antes de publicar.                    |
-| 4     | Implementar registro de solicitantes, verificación de correo e invitaciones de proveedores usando SMTP y tokens de un solo uso.                  | Onboarding institucional con estados, límites y consumo atómico de tokens.              |
-| 5     | Implementar revisión administrativa y auditoría; aplicar los controles de rol/propiedad a cada endpoint y mantener DPI/CUI tras el gate de privacidad. | Acceso seguro y trazable para construir los demás flujos.                            |
-| 6     | Implementar importación del catálogo INE con conservación de encabezados repetidos y valores originales.                                         | Importación validable, reintentable y sin deduplicación por NOG.                        |
-| 7     | Implementar solicitudes, productos y adjuntos privados.                                                                                          | Flujo S.00 con validación de borrador/envío y acceso controlado.                        |
-| 8     | Implementar la matriz S.11 y confirmación de empresas por producto.                                                                              | Propuesta de proveedores trazable y revisable por personal autorizado.                  |
-| 9     | Implementar el expediente de comisión y captura de cotizaciones S.21/S.22.                                                                       | Representantes, documentos, cotizaciones y componentes de costo por producto.           |
-| 10    | Validar estadísticas, búsqueda externa, IA e informes como fases posteriores.                                                                    | Resultados comparables y auditables; no mezclar cotizaciones ni fuentes sin validación. |
-| 11    | Revisar seguridad, pruebas integrales, despliegue y documentación de operación.                                                                  | PR revisado y versión lista para desplegar.                                             |
+| Orden | Trabajo | Resultado esperado |
+|---|---|---|
+| 1 | Aplicar y verificar la migración de identidad en PostgreSQL; configurar y probar los CIDR de proxy del despliegue. | Esquema actualizado y obtención verificable de la IP cliente antes de tráfico real. |
+| 2 | Compartir el modelo de datos y el contrato de autenticación con frontend; acordar campos, enums, nulabilidad y formatos JSON. | Integración de los formularios y del inicio/cierre de sesión sin asumir endpoints inexistentes. |
+| 3 | Confirmar con el INE las decisiones abiertas sobre cotizaciones, entrega física, privacidad, correo y dominios. | Reglas y configuración claras antes de codificar flujos dependientes. |
+| 4 | Implementar registro de solicitantes, verificación de correo e invitaciones de proveedores usando SMTP y tokens de un solo uso. | Onboarding institucional con estados, límites y consumo atómico de tokens. |
+| 5 | Implementar revisión administrativa y auditoría; aplicar rol y propiedad a cada endpoint y mantener DPI/CUI bloqueado hasta aprobar privacidad. | Acceso seguro y trazable para los flujos de negocio. |
+| 6 | Aplicar el importador CLI en un entorno PostgreSQL de aceptación y revisar alias y filas con observaciones. | Carga verificable, reintentable y sin deduplicación por NOG. No exponer carga HTTP sin controles y almacenamiento privado. |
+| 7 | Implementar solicitudes, productos y adjuntos privados. | Flujo S.00 con validación de borrador/envío y acceso controlado. |
+| 8 | Implementar la matriz S.11 y confirmación de empresas por producto. | Propuesta de proveedores trazable y revisable por personal autorizado. |
+| 9 | Implementar el expediente de comisión y captura de cotizaciones S.21/S.22. | Representantes, documentos, cotizaciones y componentes de costo por producto. |
+| 10 | Validar estadísticas, búsqueda externa, IA e informes como fases posteriores. | Resultados comparables y auditables; no mezclar cotizaciones ni fuentes sin validación. |
+| 11 | Revisar seguridad, pruebas integrales, despliegue y documentación de operación. | PR revisado y versión lista para desplegar. |
 
 ## Reparto por disponibilidad de créditos de IA
 

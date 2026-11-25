@@ -64,6 +64,7 @@ La configuración local se define en `.env`. `.env.example` contiene los valores
       auditoria/            Módulo inicial
       adjuntos/             Módulo inicial
       integraciones/        Módulo inicial
+      referencias-ine/      Importación y normalización del catálogo oficial
   prisma/                   Esquema y migraciones
   test/                     Pruebas de extremo a extremo
 ```
@@ -88,6 +89,7 @@ Los módulos de invitaciones, auditoría, adjuntos e integraciones conservan est
 - Esquema Prisma y migraciones para usuarios, roles, proveedores, invitaciones, verificación de correo y bitácora.
 - Catálogo de productos de proveedor con historial de precios e importaciones con filas fuente y estado de validación.
 - Importaciones del catálogo del INE con conservación de encabezados y filas originales, modalidades canónicas y sus alias.
+- Importador CLI XLSX para el catálogo INE: valida firma, tamaño y encabezados, conserva ambas columnas `Modalidad`, normaliza datos a staging y marca observaciones sin eliminar la fuente.
 - Solicitudes vinculadas a una cuenta, con modalidad, productos, código SIGES y adjuntos tipificados.
 - Persistencia para empresas propuestas por producto en Subasta Electrónica Inversa y expedientes de comisión, representantes y cotizaciones para bienes importados.
 - Roles iniciales `ADMIN`, `TRABAJADOR_INE`, `PROVEEDOR` y `USUARIO`; la migración de identidad renombra `USUARIO` a `SOLICITANTE` preservando sus asignaciones.
@@ -99,11 +101,21 @@ Los módulos de invitaciones, auditoría, adjuntos e integraciones conservan est
 
 ## Pendiente
 
-El registro, la verificación de correo, las invitaciones, la aprobación administrativa, auditoría, importación de archivos, adjuntos y gestión de solicitudes aún no tienen endpoints. Los helpers de autorización ya existen, pero falta aplicarlos en cada operación protegida y cubrir sus pruebas de integración. Para enviar correo fuera de pruebas se deben configurar `SMTP_HOST` y `SMTP_FROM`; las credenciales `SMTP_USER` y `SMTP_PASSWORD` son opcionales, pero deben proporcionarse juntas. `SMTP_SECURE=false` exige STARTTLS; usa `true` para TLS implícito. También están pendientes límites por cuenta, búsqueda web, proveedores de IA, análisis y generación de informes. La API usa sesiones con cookie y CSRF, no JWT.
+El registro, la verificación de correo, las invitaciones, la aprobación administrativa, auditoría, adjuntos y gestión de solicitudes aún no tienen endpoints. El importador del catálogo se ejecuta por CLI; no expone una carga HTTP. Los controles compartidos de autorización todavía deben aplicarse en cada operación de negocio y cubrirse con pruebas de integración. Para enviar correo fuera de pruebas se deben configurar `SMTP_HOST` y `SMTP_FROM`; las credenciales `SMTP_USER` y `SMTP_PASSWORD` son opcionales, pero deben proporcionarse juntas. `SMTP_SECURE=false` exige STARTTLS; usa `true` para TLS implícito. También están pendientes límites por cuenta, búsqueda web, proveedores de IA, análisis y generación de informes. La API usa sesiones con cookie y CSRF, no JWT.
 
 La normalización y los atributos de cada entidad se documentan en [docs/modelo-datos.md](./docs/modelo-datos.md); el diagrama ER imprimible con todas las entidades y columnas está en [docs/modelo-relacional-base-datos-v2.pdf](./docs/modelo-relacional-base-datos-v2.pdf). La [guía del MVP de Contrato Abierto](./docs/guia-mvp-contrato-abierto.md) propone vistas, rutas y entidades para orientar la primera entrega; las rutas de solicitudes allí descritas aún no existen. El contrato HTTP disponible se describe en [api-service-contracts.md](./.github/modernize/assessment/engines/facts/api-service-contracts.md), y los controles para futuras rutas en [docs/criterios-aceptacion-api.md](./docs/criterios-aceptacion-api.md). Los principios de seguridad, datos y calidad están en [constitution.md](./.github/modernize/constitution.md). La [especificación y el plan de identidad](./.github/modernize/identity-access/plan.md) cubren tanto el flujo implementado como las tareas pendientes. El catálogo perfilado tiene 7,788 filas; sus dos columnas `Modalidad` coinciden y NOG se repite, por lo que se conservan los datos originales sin usar NOG como clave. El esquema define persistencia, no los servicios de validación ni el reemplazo de la entrega física que exige el INE.
 
 Antes de habilitar tráfico real detrás de un proxy, hay que configurar `TRUSTED_PROXY_CIDRS` con los rangos correctos y verificar la IP efectiva del cliente. El límite actual es general más una restricción de inicio de sesión; no sustituye controles por cuenta para otras operaciones.
+
+## Importar el catálogo INE
+
+Con la base de datos migrada y las variables del archivo `.env` configuradas, importa un XLSX mediante:
+
+```powershell
+npm run import:ine -- --archivo "C:\ruta\al\catalogo.xlsx" --usuario-id <uuid-del-actor>
+```
+
+`--usuario-id` es opcional para una carga técnica. El hash SHA-256 hace idempotente una repetición exacta del mismo archivo; si ya existe, el comando devuelve el resumen del lote previo. Las filas con observaciones se conservan en staging y las referencias sin un importe válido quedan fuera de futuras estadísticas de precios.
 
 ## Verificación
 
