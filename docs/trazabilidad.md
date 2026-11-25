@@ -22,3 +22,12 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - Ejecutar la migración y el importador en un PostgreSQL de aceptación; el entorno de desarrollo no se considera validación de despliegue.
 - Completar registro, verificación de correo, invitaciones, revisión administrativa y endpoints de solicitudes.
 - Aplicar controles de rol y propiedad en cada operación de negocio y cubrirlos con pruebas de integración.
+
+## 2026-11-24 — Alineación tras la integración de #4 y #5
+
+**Rama:** `fix/auth-docs-alineacion`
+
+- Al fusionar `feat/auth-importerExcel` con `jrealiquez` prevaleció la auth de sesiones opacas (`SesionUsuario`, CSRF por sesión, `TRUSTED_PROXY_CIDRS`). La auth de la rama original (JWT con refresh rotativo, filtro RFC 7807 e IP en auditoría) no se conservó; el importador INE sí.
+- Corregido un rechazo no manejado en `auth.service.spec.ts` (ambas promesas se esperan ahora con `Promise.allSettled`).
+- README: añadidas instrucciones de instalación y nota sobre el cambio de nombre de la migración de sesiones.
+- Pendiente de decisión: reincorporar IP en auditoría y respuestas RFC 7807 con `code` estable sobre la auth actual.

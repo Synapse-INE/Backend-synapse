@@ -108,10 +108,17 @@ describe('AuthService', () => {
       'incorrect password',
     );
 
-    await expect(unknownEmail).rejects.toThrow(UnauthorizedException);
-    await expect(wrongPassword).rejects.toThrow(UnauthorizedException);
-    await expect(unknownEmail).rejects.toThrow('Credenciales no válidas.');
-    await expect(wrongPassword).rejects.toThrow('Credenciales no válidas.');
+    const [unknownResult, wrongResult] = await Promise.allSettled([
+      unknownEmail,
+      wrongPassword,
+    ]);
+
+    for (const result of [unknownResult, wrongResult]) {
+      expect(result.status).toBe('rejected');
+      const reason = (result as PromiseRejectedResult).reason;
+      expect(reason).toBeInstanceOf(UnauthorizedException);
+      expect(reason.message).toBe('Credenciales no válidas.');
+    }
   });
 
   it('does not create sessions for accounts without verified email or active status', async () => {
