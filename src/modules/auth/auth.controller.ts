@@ -23,7 +23,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import type { CookieOptions, Response } from 'express';
+import type { CookieOptions, Request, Response } from 'express';
 import type { AuthenticatedRequest } from '../../common/auth/auth-context.js';
 import { AuthService } from './auth.service.js';
 import { Public } from './public.decorator.js';
@@ -74,8 +74,11 @@ export class AuthController {
   async signIn(
     @Body() body: SignInDto,
     @Res({ passthrough: true }) response: Response,
+    @Req() request?: Request,
   ) {
-    const result = await this.authService.signIn(body.email, body.password);
+    const result = await this.authService.signIn(body.email, body.password, {
+      ip: request?.ip,
+    });
     response.cookie(
       this.config.getOrThrow<string>('SESSION_COOKIE_NAME'),
       result.sessionToken,
@@ -145,7 +148,11 @@ export class AuthController {
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
-    await this.authService.revokeSession(request.auth.sessionId);
+    await this.authService.revokeSession(
+      request.auth.sessionId,
+      request.auth.usuario.id,
+      { ip: request.ip },
+    );
     response.clearCookie(
       this.config.getOrThrow<string>('SESSION_COOKIE_NAME'),
       { ...this.cookieOptions(), httpOnly: true },

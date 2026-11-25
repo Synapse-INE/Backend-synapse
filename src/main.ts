@@ -1,10 +1,10 @@
-import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { crearValidationPipe } from './common/http/validation-pipe.js';
 import { ConfigService } from '@nestjs/config';
 import { isValidTrustedProxyCidr } from './infrastructure/security/trusted-proxy-cidr.js';
 import { setupSwagger } from './infrastructure/openapi/swagger.js';

@@ -15,7 +15,9 @@ describe('AuthService', () => {
     },
     sesionUsuario: {
       create: vi.fn(),
+      updateMany: vi.fn(),
     },
+    eventoAuditoria: { create: vi.fn() },
     $transaction: vi.fn(),
   };
   let authService: AuthService;
@@ -108,10 +110,17 @@ describe('AuthService', () => {
       'incorrect password',
     );
 
-    await expect(unknownEmail).rejects.toThrow(UnauthorizedException);
-    await expect(wrongPassword).rejects.toThrow(UnauthorizedException);
-    await expect(unknownEmail).rejects.toThrow('Credenciales no válidas.');
-    await expect(wrongPassword).rejects.toThrow('Credenciales no válidas.');
+    const [unknownResult, wrongResult] = await Promise.allSettled([
+      unknownEmail,
+      wrongPassword,
+    ]);
+
+    for (const result of [unknownResult, wrongResult]) {
+      expect(result.status).toBe('rejected');
+      const reason = (result as PromiseRejectedResult).reason;
+      expect(reason).toBeInstanceOf(UnauthorizedException);
+      expect(reason.message).toBe('Credenciales no válidas.');
+    }
   });
 
   it('does not create sessions for accounts without verified email or active status', async () => {
@@ -131,5 +140,67 @@ describe('AuthService', () => {
       ),
     ).rejects.toThrow('Credenciales no válidas.');
     expect(prisma.sesionUsuario.create).not.toHaveBeenCalled();
+  });
+
+  it('audita el inicio de sesión exitoso con la IP del cliente', async () => {
+    const password = 'correct horse battery staple';
+    const user = {
+      id: '497f6eca-6276-4993-bfeb-53cbbbba6f08',
+      email: 'requester@example.org',
+      passwordHash: await argon2.hash(password),
+      nombre: 'Requester',
+      estado: 'ACTIVO',
+      emailVerificadoEn: new Date(),
+      roles: [],
+    };
+    prisma.usuario.findUnique.mockResolvedValue(user);
+
+    await authService.signIn(user.email, password, { ip: '203.0.113.7' });
+
+    expect(prisma.eventoAuditoria.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorId: user.id,
+        accion: 'INICIO_SESION',
+        ip: '203.0.113.7',
+      }),
+    });
+  });
+
+  it('audita el intento fallido sin guardar el correo en claro', async () => {
+    prisma.usuario.findUnique.mockResolvedValue(null);
+
+    await expect(
+      authService.signIn('missing@example.org', 'x', { ip: '203.0.113.8' }),
+    ).rejects.toThrow(UnauthorizedException);
+
+    const { data } = prisma.eventoAuditoria.create.mock.calls[0][0];
+    expect(data).toMatchObject({
+      actorId: null,
+      accion: 'INICIO_SESION_FALLIDO',
+      ip: '203.0.113.8',
+    });
+    expect(JSON.stringify(data)).not.toContain('missing@example.org');
+  });
+
+  it('no bloquea el rechazo si falla la auditoría del intento', async () => {
+    prisma.usuario.findUnique.mockResolvedValue(null);
+    prisma.eventoAuditoria.create.mockRejectedValueOnce(new Error('db caída'));
+
+    await expect(authService.signIn('a@example.org', 'x')).rejects.toThrow(
+      'Credenciales no válidas.',
+    );
+  });
+
+  it('audita el cierre de sesión', async () => {
+    await authService.revokeSession('sesion-1', 'usuario-1', { ip: '203.0.113.9' });
+
+    expect(prisma.eventoAuditoria.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorId: 'usuario-1',
+        accion: 'CIERRE_SESION',
+        recursoId: 'sesion-1',
+        ip: '203.0.113.9',
+      }),
+    });
   });
 });

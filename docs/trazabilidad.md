@@ -22,3 +22,45 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - Ejecutar la migración y el importador en un PostgreSQL de aceptación; el entorno de desarrollo no se considera validación de despliegue.
 - Completar registro, verificación de correo, invitaciones, revisión administrativa y endpoints de solicitudes.
 - Aplicar controles de rol y propiedad en cada operación de negocio y cubrirlos con pruebas de integración.
+
+## 2026-11-24 — Alineación tras la integración de #4 y #5
+
+**Rama:** `fix/auth-docs-alineacion`
+
+- Al fusionar `feat/auth-importerExcel` con `jrealiquez` prevaleció la auth de sesiones opacas (`SesionUsuario`, CSRF por sesión, `TRUSTED_PROXY_CIDRS`). La auth de la rama original (JWT con refresh rotativo, filtro RFC 7807 e IP en auditoría) no se conservó; el importador INE sí.
+- Corregido un rechazo no manejado en `auth.service.spec.ts` (ambas promesas se esperan ahora con `Promise.allSettled`).
+- README: añadidas instrucciones de instalación y nota sobre el cambio de nombre de la migración de sesiones.
+- Pendiente de decisión: reincorporar IP en auditoría y respuestas RFC 7807 con `code` estable sobre la auth actual.
+
+## 2026-11-24 — Auditoría de acceso con IP y errores RFC 7807
+
+**Rama:** `feat/auth-auditoria-rfc7807`
+
+- Migración `20261124040000_auditoria_ip`: columna `ip` (VARCHAR(45)) en `eventos_auditoria`.
+- Se auditan `INICIO_SESION`, `INICIO_SESION_FALLIDO` (sin guardar el correo en claro: solo su hash SHA-256) y `CIERRE_SESION`, con la IP efectiva (`request.ip`, que respeta `TRUSTED_PROXY_CIDRS`). La auditoría del éxito se escribe en la misma transacción que la sesión; la de fallos y cierres es de mejor esfuerzo y no impide la respuesta.
+- `ProblemDetailsFilter` global (`APP_FILTER`): respuestas `application/problem+json` con `code` estable (`NO_AUTENTICADO`, `SIN_PERMISO`, `NO_ENCONTRADO`, `CONFLICTO`, `LIMITE_EXCEDIDO`, `SOLICITUD_INVALIDA`). Los errores de validación devuelven `VALIDACION_FALLIDA` con `errors[{field, message}]`.
+- `test/identity-migration.spec.ts` ya no asume que la migración de identidad es la última.
+
+## 2026-11-24 — Registro, verificación de correo, invitaciones y revisión de solicitantes
+
+**Rama:** `feat/registro-verificacion-invitaciones` (incluye la rama `feat/auth-auditoria-rfc7807`, de la que depende para registrar la IP)
+
+- Nuevos módulos `registro`, `invitaciones` y `solicitantes`, y `AuditoriaService` compartido (`registrarEn` transaccional y `registrar` de mejor esfuerzo).
+- Registro sin enumeración de cuentas: misma respuesta 202 para correos nuevos, existentes o en carrera; el hash Argon2 se calcula siempre.
+- Tokens de verificación e invitación de un solo uso, solo hash en base de datos, consumo atómico (`updateMany` con `consumidoEn/aceptadaEn = null` y vigencia). El token nunca se devuelve ni se registra; si falla el SMTP la cuenta se conserva y la invitación devuelve `correoEnviado: false`.
+- Un solicitante necesita correo verificado y aprobación de un `ADMIN` para iniciar sesión; el proveedor solo existe vía invitación.
+- Nuevas variables: `FRONTEND_URL`, `EMAIL_TOKEN_TTL_HOURS`, `INVITATION_TTL_HOURS`, `REGISTRO_DOMINIOS_PERMITIDOS`.
+- Verificación: 66 pruebas unitarias y e2e, y una prueba de humo contra PostgreSQL real (registro, verificación, aprobación con y sin CSRF, rol no autorizado, invitación y reutilización) con auditoría con IP.
+- Pendiente: pantalla de administración, límites por cuenta, rotación de invitaciones desde la UI, y confirmar con el INE los dominios permitidos.
+
+## 2026-11-24 — Solicitudes S.00 (borrador, envío y revisión)
+
+**Rama:** `feat/solicitudes-s00` (incluye `feat/registro-verificacion-invitaciones`, que a su vez incluye `feat/auth-auditoria-rfc7807`)
+
+- Migración `20261124050000_solicitudes_borrador`: valor `BORRADOR` en `estado_solicitud` y columna `enviada_en` (las solicitudes existentes se marcan como enviadas en su fecha de creación).
+- Nuevo módulo `solicitudes`: crear borrador, listar, ver, editar, enviar y cambiar estado. Cada solicitud queda ligada a `creadaPorId` y a la institución del solicitante.
+- Autorización: el solicitante lee lo propio y lo enviado por su institución, y solo el autor modifica; el personal del INE (`TRABAJADOR_INE`, `ADMIN`) ve lo enviado y es el único que cambia estados. Una solicitud ajena responde 404 para no revelar su existencia.
+- Reglas de envío en el servidor (422 `SOLICITUD_INCOMPLETA` con detalle por campo); envío atómico (`updateMany` con `estado = BORRADOR`) y transiciones de estado con compare-and-set.
+- Decisiones aplicadas según la documentación, pendientes de confirmar con el INE: mínimo de cotizaciones por producto (aún no aplicado, pertenece a S.11/S.21), Contrato Abierto como copia digital dirigida a la DGAE, y estados por rol como se describe arriba.
+- Verificación: 80 pruebas unitarias/e2e y una prueba de humo contra PostgreSQL real (creación, 422 de envío incompleto, aislamiento entre instituciones y personal, doble envío, saltos de estado y auditoría).
+- Pendiente: adjuntos privados, S.11 (proveedores por producto), S.21/S.22, y borrado de borradores.

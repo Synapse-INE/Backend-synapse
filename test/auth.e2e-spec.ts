@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import argon2 from 'argon2';
 import cookieParser from 'cookie-parser';
@@ -12,6 +12,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { crearValidationPipe } from '../src/common/http/validation-pipe.js';
 import { PrismaService } from '../src/infrastructure/database/prisma.service.js';
 import { setupSwagger } from '../src/infrastructure/openapi/swagger.js';
 
@@ -39,6 +40,7 @@ describe('Authentication endpoints', () => {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    eventoAuditoria: { create: vi.fn() },
     $transaction: vi.fn(),
   };
   let app: INestApplication;
@@ -60,13 +62,7 @@ describe('Authentication endpoints', () => {
     app.setGlobalPrefix('api/v1');
     setupSwagger(app, 'ine_session');
     app.use(cookieParser());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    app.useGlobalPipes(crearValidationPipe());
     await app.init();
   }, 30_000);
 
@@ -197,5 +193,20 @@ describe('Authentication endpoints', () => {
       .set('x-forwarded-for', '198.51.100.5')
       .send({ email: user.email, password: 'incorrect password' })
       .expect(429);
+  });
+
+  it('responde errores como application/problem+json con código estable', async () => {
+    const respuesta = await request(app.getHttpServer())
+      .get('/api/v1/auth/yo')
+      .expect(401);
+
+    expect(respuesta.headers['content-type']).toContain(
+      'application/problem+json',
+    );
+    expect(respuesta.body).toMatchObject({
+      status: 401,
+      code: 'NO_AUTENTICADO',
+      instance: '/api/v1/auth/yo',
+    });
   });
 });
