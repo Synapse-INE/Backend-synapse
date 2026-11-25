@@ -7,7 +7,7 @@ export type FilaNormalizadaINE = {
   datos: {
     tipoModalidadCodigo: string | null;
     modalidadOriginal: string | null;
-    referenciaContrato: null;
+    referenciaContrato: string | null;
     nog: string | null;
     eventoOriginal: string | null;
     correlativo: string | null;
@@ -71,7 +71,9 @@ export function normalizarFilaINE(valores: ValoresFilaINE): FilaNormalizadaINE {
         ? codigoModalidadConocida(modalidadPrincipal)
         : null,
       modalidadOriginal: modalidadPrincipal,
-      referenciaContrato: null,
+      referenciaContrato: modalidadPrincipal
+        ? referenciaContrato(modalidadPrincipal)
+        : null,
       nog: texto(valores.nog, 100, 'nog', errores),
       eventoOriginal: texto(valores.eventoOriginal, 240, 'eventoOriginal', errores),
       correlativo: texto(valores.correlativo, 100, 'correlativo', errores),
@@ -100,13 +102,33 @@ export function claveModalidad(valor: string) {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+// «Contrato Abierto Número 08-2021» o «Contrato Abierto 02-2024»: el sufijo
+// identifica el contrato concreto, no una modalidad distinta.
+const PATRON_CONTRATO_ABIERTO =
+  /^contrato abierto(?:\s+n[uú]mero)?\s*(\d{1,3}-\d{4})$/i;
+
+// Alias revisados manualmente que no siguen un patrón reconocible.
+const ALIAS_REVISADOS: Record<string, string> = {
+  bienesysuminstrosimportados: 'BIENES_SUMINISTROS_IMPORTADOS',
+};
+
+function referenciaContrato(valor: string) {
+  const coincidencia = valor.match(PATRON_CONTRATO_ABIERTO);
+  return coincidencia ? coincidencia[1] : null;
+}
+
 function codigoModalidadConocida(valor: string) {
   const clave = claveModalidad(valor);
   const codigos: Record<string, string> = {
     contratoabierto: 'CONTRATO_ABIERTO',
     subastaelectronicainversa: 'SUBASTA_ELECTRONICA_INVERSA',
     bienesysuministrosimportados: 'BIENES_SUMINISTROS_IMPORTADOS',
+    ...ALIAS_REVISADOS,
   };
+
+  if (PATRON_CONTRATO_ABIERTO.test(valor.replace(/\s+/g, ' ').trim())) {
+    return 'CONTRATO_ABIERTO';
+  }
 
   return codigos[clave] ?? null;
 }
@@ -172,6 +194,11 @@ function normalizarFecha(
 ) {
   const fuente = texto(valor, undefined, campo, errores);
   if (fuente === null) {
+    return null;
+  }
+
+  // El libro usa «30/11/-0001» (fecha cero de Excel) como marcador de «sin fecha».
+  if (/^\d{1,2}\/\d{1,2}\/-0*1$/.test(fuente)) {
     return null;
   }
 

@@ -99,9 +99,39 @@ Los módulos de invitaciones, auditoría, adjuntos e integraciones conservan est
 - Compose con PostgreSQL 16 y las extensiones `pg_trgm`, `unaccent` y `vector`.
 - Pruebas unitarias y de extremo a extremo para salud y ciclo de sesión.
 
+## Registro, verificación e invitaciones
+
+| Método y ruta | Acceso | Descripción |
+|---|---|---|
+| `POST /api/v1/auth/registro-solicitante` | Público | Crea una cuenta `SOLICITANTE` en `PENDIENTE_VERIFICACION` con su institución y perfil. Siempre responde 202 con el mismo mensaje, exista o no el correo. |
+| `POST /api/v1/auth/verificar-correo` | Público | Consume un token de un solo uso (204) y deja la cuenta en `PENDIENTE_APROBACION`. |
+| `POST /api/v1/auth/reenviar-verificacion` | Público | Emite un token nuevo e invalida los anteriores; respuesta genérica. |
+| `POST /api/v1/invitaciones` | `ADMIN` | Invita a un proveedor existente (`proveedorId`) o nuevo (`nuevoProveedor`). Devuelve `correoEnviado`; nunca el token. |
+| `POST /api/v1/auth/aceptar-invitacion` | Público con token | Crea la cuenta `PROVEEDOR` activa, ligada solo al proveedor invitado; la invitación no se reutiliza. |
+| `GET /api/v1/solicitantes/pendientes` | `ADMIN` | Lista solicitantes con correo verificado pendientes de revisión. |
+| `POST /api/v1/solicitantes/:usuarioId/aprobar` · `/rechazar` | `ADMIN` | Activa la cuenta o la desactiva; se audita revisor, fecha e IP. |
+
+Un solicitante no puede iniciar sesión hasta verificar su correo **y** ser aprobado. Los tokens se guardan solo como hash SHA-256 y caducan (`EMAIL_TOKEN_TTL_HOURS`, `INVITATION_TTL_HOURS`). Configura `FRONTEND_URL` (enlaces de los correos) y, opcionalmente, `REGISTRO_DOMINIOS_PERMITIDOS` (por ejemplo `gob.gt`). El DPI/CUI no se recolecta.
+
+## Solicitudes de precio (S.00)
+
+| Método y ruta | Rol | Descripción |
+|---|---|---|
+| `POST /api/v1/solicitudes` | `SOLICITANTE` | Crea un borrador ligado al usuario y a su institución; admite cabecera y lista de productos. |
+| `GET /api/v1/solicitudes` · `GET /api/v1/solicitudes/:id` | Todos los roles de trabajo | El solicitante ve sus borradores y lo enviado por su institución; el personal del INE ve lo enviado. Lo ajeno responde 404. |
+| `PATCH /api/v1/solicitudes/:id` | `SOLICITANTE` autor | Edita un borrador; si se envía `productos`, reemplaza la lista. |
+| `POST /api/v1/solicitudes/:id/enviar` | `SOLICITANTE` autor | Valida la cabecera y cada producto (especificaciones, unidad y cantidad > 0). Si falta algo responde 422 `SOLICITUD_INCOMPLETA` con `errors[{field,message}]`. |
+| `POST /api/v1/solicitudes/:id/estado` | `TRABAJADOR_INE`, `ADMIN` | `RECIBIDA → EN_REVISION → EN_ANALISIS → COMPLETADA`, y `RECHAZADA` desde cualquiera de las anteriores; el motivo queda en la auditoría. |
+
+Un borrador puede estar incompleto; solo al enviar se exigen modalidad, unidad ejecutora, fecha del formulario, enlace, autoridad y productos. Las cantidades viajan como cadena decimal y la fecha como `YYYY-MM-DD`. Los adjuntos privados y los formularios S.11, S.21 y S.22 siguen pendientes.
+
+## Errores y auditoría de acceso
+
+Todos los errores HTTP se devuelven como `application/problem+json` (RFC 7807) con `type`, `title`, `status`, `detail`, `instance` y un `code` estable. Los errores de validación usan `VALIDACION_FALLIDA` y listan `errors: [{ field, message }]`. El inicio de sesión, el intento fallido y el cierre de sesión se registran en `eventos_auditoria` con la IP del cliente; configura `TRUSTED_PROXY_CIDRS` para que la IP sea fiable detrás de un proxy.
+
 ## Pendiente
 
-El registro, la verificación de correo, las invitaciones, la aprobación administrativa, auditoría, adjuntos y gestión de solicitudes aún no tienen endpoints. El importador del catálogo se ejecuta por CLI; no expone una carga HTTP. Los controles compartidos de autorización todavía deben aplicarse en cada operación de negocio y cubrirse con pruebas de integración. Para enviar correo fuera de pruebas se deben configurar `SMTP_HOST` y `SMTP_FROM`; las credenciales `SMTP_USER` y `SMTP_PASSWORD` son opcionales, pero deben proporcionarse juntas. `SMTP_SECURE=false` exige STARTTLS; usa `true` para TLS implícito. También están pendientes límites por cuenta, búsqueda web, proveedores de IA, análisis y generación de informes. La API usa sesiones con cookie y CSRF, no JWT.
+Auditoría consultable, adjuntos y gestión de solicitudes aún no tienen endpoints. El importador del catálogo se ejecuta por CLI; no expone una carga HTTP. Los controles compartidos de autorización todavía deben aplicarse en cada operación de negocio y cubrirse con pruebas de integración. Para enviar correo fuera de pruebas se deben configurar `SMTP_HOST` y `SMTP_FROM`; las credenciales `SMTP_USER` y `SMTP_PASSWORD` son opcionales, pero deben proporcionarse juntas. `SMTP_SECURE=false` exige STARTTLS; usa `true` para TLS implícito. También están pendientes límites por cuenta, búsqueda web, proveedores de IA, análisis y generación de informes. La API usa sesiones con cookie y CSRF, no JWT.
 
 La normalización y los atributos de cada entidad se documentan en [docs/modelo-datos.md](./docs/modelo-datos.md); el diagrama ER imprimible con todas las entidades y columnas está en [docs/modelo-relacional-base-datos-v2.pdf](./docs/modelo-relacional-base-datos-v2.pdf). La [guía del MVP de Contrato Abierto](./docs/guia-mvp-contrato-abierto.md) propone vistas, rutas y entidades para orientar la primera entrega; las rutas de solicitudes allí descritas aún no existen. El contrato HTTP disponible se describe en [api-service-contracts.md](./.github/modernize/assessment/engines/facts/api-service-contracts.md), y los controles para futuras rutas en [docs/criterios-aceptacion-api.md](./docs/criterios-aceptacion-api.md). Los principios de seguridad, datos y calidad están en [constitution.md](./.github/modernize/constitution.md). La [especificación y el plan de identidad](./.github/modernize/identity-access/plan.md) cubren tanto el flujo implementado como las tareas pendientes. El catálogo perfilado tiene 7,788 filas; sus dos columnas `Modalidad` coinciden y NOG se repite, por lo que se conservan los datos originales sin usar NOG como clave. El esquema define persistencia, no los servicios de validación ni el reemplazo de la entrega física que exige el INE.
 
@@ -114,6 +144,8 @@ Con la base de datos migrada y las variables del archivo `.env` configuradas, im
 ```powershell
 npm run import:ine -- --archivo "C:\ruta\al\catalogo.xlsx" --usuario-id <uuid-del-actor>
 ```
+
+Si cambian las reglas de normalización, `npm run reprocesar:ine [-- --importacion-id <uuid>]` las reaplica a las filas ya almacenadas a partir de sus datos originales, sin volver a leer el libro. Reglas vigentes: la fecha `30/11/-0001` es el marcador de «sin fecha» del libro y deja `fecha_publicacion` en `NULL` sin observación; `Contrato Abierto [Número] NN-AAAA` se confirma como `CONTRATO_ABIERTO` y guarda `NN-AAAA` en `referencia_contrato`; un precio `Sin Dato` mantiene la fila en `REVISAR`.
 
 El comando compila con `nest build` y ejecuta `dist/scripts/importar-referencias-ine.js`; no usa `tsx` porque este no emite los metadatos de decoradores que Nest necesita para la inyección. En Windows, `npm run` divide las rutas con espacios: usa una ruta sin espacios o ejecuta `node dist/scripts/importar-referencias-ine.js --archivo "<ruta>"` tras compilar.
 
