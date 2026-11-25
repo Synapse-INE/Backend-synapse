@@ -16,13 +16,29 @@ Backend del Portal de Precios de Referencia, desarrollado con NestJS y TypeScrip
 
 La API utiliza el prefijo `/api/v1` y actualmente ofrece:
 
-| Método | Ruta                   | Descripción                                            | Acceso              |
-| ------ | ---------------------- | ------------------------------------------------------ | ------------------- |
-| `GET`  | `/salud`               | Comprueba la disponibilidad de la API.                 | Público             |
-| `POST` | `/auth/iniciar-sesion` | Autentica una cuenta activa y con correo verificado.   | Público             |
-| `GET`  | `/auth/yo`             | Devuelve la identidad y los roles de la sesión actual. | Requiere sesión     |
-| `GET`  | `/auth/csrf`           | Renueva el token CSRF de la sesión.                    | Requiere sesión     |
-| `POST` | `/auth/cerrar-sesion`  | Revoca la sesión y elimina la cookie.                  | Sesión y token CSRF |
+| Método  | Ruta                                       | Descripción                                                        | Acceso                               |
+| ------- | ------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------ |
+| `GET`   | `/salud`                                   | Comprueba la disponibilidad de la API.                             | Público                              |
+| `POST`  | `/auth/iniciar-sesion`                     | Autentica una cuenta activa y con correo verificado.               | Público                              |
+| `GET`   | `/auth/yo`                                 | Devuelve la identidad y los roles de la sesión actual.             | Sesión                               |
+| `GET`   | `/auth/csrf`                               | Renueva el token CSRF de la sesión.                                | Sesión                               |
+| `POST`  | `/auth/cerrar-sesion`                      | Revoca la sesión y elimina la cookie.                              | Sesión y CSRF                        |
+| `POST`  | `/auth/registro-solicitante`               | Registra un solicitante (respuesta 202 genérica).                  | Público                              |
+| `POST`  | `/auth/verificar-correo`                   | Verifica el correo con un token de un solo uso.                    | Público                              |
+| `POST`  | `/auth/reenviar-verificacion`              | Reenvía el enlace de verificación.                                 | Público                              |
+| `POST`  | `/auth/aceptar-invitacion`                 | Crea la cuenta de un proveedor invitado.                           | Público con token                    |
+| `POST`  | `/invitaciones`                            | Invita a un proveedor existente o nuevo.                           | `ADMIN`, sesión y CSRF               |
+| `GET`   | `/solicitantes/pendientes`                 | Lista solicitantes pendientes de revisión.                         | `ADMIN`                              |
+| `POST`  | `/solicitantes/:usuarioId/aprobar`         | Aprueba y activa al solicitante.                                   | `ADMIN`, sesión y CSRF               |
+| `POST`  | `/solicitantes/:usuarioId/rechazar`        | Rechaza y desactiva al solicitante.                                | `ADMIN`, sesión y CSRF               |
+| `POST`  | `/solicitudes`                             | Crea un borrador de solicitud S.00.                                | `SOLICITANTE`, sesión y CSRF         |
+| `GET`   | `/solicitudes`                             | Lista solicitudes según el alcance del usuario.                    | Sesión                               |
+| `GET`   | `/solicitudes/:id`                         | Consulta una solicitud con sus productos.                          | Sesión                               |
+| `PATCH` | `/solicitudes/:id`                         | Edita un borrador.                                                 | `SOLICITANTE` autor, sesión y CSRF   |
+| `POST`  | `/solicitudes/:id/enviar`                  | Valida y envía la solicitud al INE.                                | `SOLICITANTE` autor, sesión y CSRF   |
+| `POST`  | `/solicitudes/:id/estado`                  | Cambia el estado de la solicitud.                                  | `TRABAJADOR_INE`/`ADMIN`, sesión y CSRF |
+
+Hay 19 endpoints, todos descritos en el documento OpenAPI (ver más abajo). Lo que falta para terminar el backend está en [docs/backlog-backend.md](./docs/backlog-backend.md).
 
 La autenticación utiliza sesiones opacas almacenadas en PostgreSQL. El navegador recibe el token de sesión mediante una cookie `HttpOnly`; la base de datos conserva su hash, no el valor original. Las contraseñas se verifican con Argon2id. Las solicitudes autenticadas que modifican estado requieren protección CSRF.
 
@@ -39,7 +55,7 @@ El esquema Prisma y sus migraciones definen entidades para:
 
 La migración de identidad conserva las asignaciones existentes al transformar el rol genérico `USUARIO` en `SOLICITANTE`. Los importes de referencia utilizan precisión decimal para preservar los valores de la fuente.
 
-El esquema de persistencia no implica que cada entidad tenga una ruta HTTP disponible. Los endpoints de registro, verificación de correo, invitaciones, administración y formularios todavía no forman parte de la API implementada.
+El esquema de persistencia no implica que cada entidad tenga una ruta HTTP disponible. Los endpoints de administración de usuarios, auditoría, adjuntos y formularios todavía no forman parte de la API implementada.
 
 ### Importación del catálogo INE
 
@@ -54,6 +70,36 @@ El parámetro `--usuario-id` es opcional para una carga técnica. La importació
 ### Componentes de integración y autorización
 
 El proyecto incluye un adaptador SMTP configurable y componentes compartidos para autorización por rol y propiedad de recursos. Estos componentes constituyen la base técnica para los flujos de negocio; las rutas HTTP de invitaciones, administración y solicitudes no están incluidas en la versión actual.
+
+### Registro, verificación e invitaciones
+
+| Método y ruta | Acceso | Descripción |
+|---|---|---|
+| `POST /api/v1/auth/registro-solicitante` | Público | Crea una cuenta `SOLICITANTE` en `PENDIENTE_VERIFICACION` con su institución y perfil. Siempre responde 202 con el mismo mensaje, exista o no el correo. |
+| `POST /api/v1/auth/verificar-correo` | Público | Consume un token de un solo uso (204) y deja la cuenta en `PENDIENTE_APROBACION`. |
+| `POST /api/v1/auth/reenviar-verificacion` | Público | Emite un token nuevo e invalida los anteriores; respuesta genérica. |
+| `POST /api/v1/invitaciones` | `ADMIN` | Invita a un proveedor existente (`proveedorId`) o nuevo (`nuevoProveedor`). Devuelve `correoEnviado`; nunca el token. |
+| `POST /api/v1/auth/aceptar-invitacion` | Público con token | Crea la cuenta `PROVEEDOR` activa, ligada solo al proveedor invitado; la invitación no se reutiliza. |
+| `GET /api/v1/solicitantes/pendientes` | `ADMIN` | Lista solicitantes con correo verificado pendientes de revisión. |
+| `POST /api/v1/solicitantes/:usuarioId/aprobar` · `/rechazar` | `ADMIN` | Activa la cuenta o la desactiva; se audita revisor, fecha e IP. |
+
+Un solicitante no puede iniciar sesión hasta verificar su correo **y** ser aprobado. Los tokens se guardan solo como hash SHA-256 y caducan (`EMAIL_TOKEN_TTL_HOURS`, `INVITATION_TTL_HOURS`). Configura `FRONTEND_URL` (enlaces de los correos) y, opcionalmente, `REGISTRO_DOMINIOS_PERMITIDOS` (por ejemplo `gob.gt`). El DPI/CUI no se recolecta.
+
+### Solicitudes de precio (S.00)
+
+| Método y ruta | Rol | Descripción |
+|---|---|---|
+| `POST /api/v1/solicitudes` | `SOLICITANTE` | Crea un borrador ligado al usuario y a su institución; admite cabecera y lista de productos. |
+| `GET /api/v1/solicitudes` · `GET /api/v1/solicitudes/:id` | Todos los roles de trabajo | El solicitante ve sus borradores y lo enviado por su institución; el personal del INE ve lo enviado. Lo ajeno responde 404. |
+| `PATCH /api/v1/solicitudes/:id` | `SOLICITANTE` autor | Edita un borrador; si se envía `productos`, reemplaza la lista. |
+| `POST /api/v1/solicitudes/:id/enviar` | `SOLICITANTE` autor | Valida la cabecera y cada producto (especificaciones, unidad y cantidad > 0). Si falta algo responde 422 `SOLICITUD_INCOMPLETA` con `errors[{field,message}]`. |
+| `POST /api/v1/solicitudes/:id/estado` | `TRABAJADOR_INE`, `ADMIN` | `RECIBIDA → EN_REVISION → EN_ANALISIS → COMPLETADA`, y `RECHAZADA` desde cualquiera de las anteriores; el motivo queda en la auditoría. |
+
+Un borrador puede estar incompleto; solo al enviar se exigen modalidad, unidad ejecutora, fecha del formulario, enlace, autoridad y productos. Las cantidades viajan como cadena decimal y la fecha como `YYYY-MM-DD`. Los adjuntos privados y los formularios S.11, S.21 y S.22 siguen pendientes.
+
+### Errores y auditoría de acceso
+
+Todos los errores HTTP se devuelven como `application/problem+json` (RFC 7807) con `type`, `title`, `status`, `detail`, `instance` y un `code` estable. Los errores de validación usan `VALIDACION_FALLIDA` y listan `errors: [{ field, message }]`. El inicio de sesión, el intento fallido y el cierre de sesión se registran en `eventos_auditoria` con la IP del cliente; configura `TRUSTED_PROXY_CIDRS` para que la IP sea fiable detrás de un proxy.
 
 ## Inicio con Docker
 
@@ -132,7 +178,7 @@ Swagger está deshabilitado por defecto. Para habilitarlo en desarrollo, estable
 - Interfaz Swagger UI: `http://localhost:3000/api/v1/docs`
 - Especificación OpenAPI JSON: `http://localhost:3000/api/v1/openapi.json`
 
-La especificación describe los endpoints implementados de salud y autenticación. Puede importarse en Postman desde la URL JSON. En producción, mantén la documentación deshabilitada salvo que su acceso esté protegido.
+La especificación describe los 19 endpoints implementados (salud, autenticación, registro e invitaciones, revisión de solicitantes y solicitudes S.00), sus esquemas de entrada generados desde los DTO, los códigos de error `application/problem+json` y los dos mecanismos de seguridad: la cookie de sesión y el encabezado `x-csrf-token`. Puede importarse en Postman desde la URL JSON. Una prueba e2e (`test/openapi.e2e-spec.ts`) falla si un endpoint nuevo no se documenta o si se documenta uno que no existe. En producción, mantén `SWAGGER_ENABLED=false` salvo que la documentación esté protegida.
 
 ## Pruebas y calidad
 
@@ -144,6 +190,12 @@ npm run lint
 npx prisma validate
 ```
 
+## Pendiente
+
+Lo que falta para terminar el backend (primer administrador y recuperación de cuenta, administración de usuarios, consulta de auditoría, adjuntos privados, formularios S.11, S.21 y S.22, catálogo INE por HTTP, estadísticas e informes) está priorizado en [docs/backlog-backend.md](./docs/backlog-backend.md), con alcance, reglas y dependencias de cada ítem. El importador del catálogo se ejecuta por CLI; no expone una carga HTTP.
+
+Para enviar correo fuera de pruebas configura `SMTP_HOST` y `SMTP_FROM`; `SMTP_USER` y `SMTP_PASSWORD` son opcionales, pero deben darse juntos. `SMTP_SECURE=false` exige STARTTLS y `true` usa TLS implícito. Antes de habilitar tráfico real detrás de un proxy, configura `TRUSTED_PROXY_CIDRS` con los rangos correctos y verifica la IP efectiva del cliente: la auditoría y los límites de peticiones dependen de ella.
+
 ## Estructura principal
 
 ```text
@@ -154,7 +206,7 @@ backend/
   src/
     common/             Contexto de autenticación y autorización compartida
     infrastructure/     Base de datos, correo, seguridad y OpenAPI
-    modules/             Módulos de salud, autenticación e importación INE
+    modules/             Salud, autenticación, registro, invitaciones, solicitantes, solicitudes, auditoría e importación INE
     scripts/             Comandos operativos
   test/                  Pruebas unitarias y de extremo a extremo
 ```
