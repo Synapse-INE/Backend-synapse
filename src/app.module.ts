@@ -9,6 +9,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { AdjuntosModule } from './modules/adjuntos/adjuntos.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { IntegracionesModule } from './modules/integraciones/integraciones.module.js';
+import { RegistroModule } from './modules/registro/registro.module.js';
+import { SolicitantesModule } from './modules/solicitantes/solicitantes.module.js';
 import { InvitacionesModule } from './modules/invitaciones/invitaciones.module.js';
 import { ReferenciasINEModule } from './modules/referencias-ine/referencias-ine.module.js';
 import { DatabaseModule } from './infrastructure/database/database.module.js';
@@ -38,6 +40,10 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
           .default('lax'),
         COOKIE_DOMAIN: Joi.string().allow('').default(''),
         TRUSTED_PROXY_CIDRS: Joi.string().allow('').default(''),
+        FRONTEND_URL: Joi.string().uri().default('http://localhost:5173'),
+        EMAIL_TOKEN_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
+        INVITATION_TTL_HOURS: Joi.number().integer().min(1).max(720).default(72),
+        REGISTRO_DOMINIOS_PERMITIDOS: Joi.string().allow('').default(''),
         SMTP_HOST: Joi.string().allow('').optional(),
         SMTP_PORT: Joi.number().port().default(587),
         SMTP_USER: Joi.string().allow('').optional(),
@@ -59,6 +65,8 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
     HealthModule,
     AuthModule,
     InvitacionesModule,
+    RegistroModule,
+    SolicitantesModule,
     AuditoriaModule,
     AdjuntosModule,
     IntegracionesModule,
