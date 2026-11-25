@@ -31,3 +31,12 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - Corregido un rechazo no manejado en `auth.service.spec.ts` (ambas promesas se esperan ahora con `Promise.allSettled`).
 - README: añadidas instrucciones de instalación y nota sobre el cambio de nombre de la migración de sesiones.
 - Pendiente de decisión: reincorporar IP en auditoría y respuestas RFC 7807 con `code` estable sobre la auth actual.
+
+## 2026-11-24 — Auditoría de acceso con IP y errores RFC 7807
+
+**Rama:** `feat/auth-auditoria-rfc7807`
+
+- Migración `20261124040000_auditoria_ip`: columna `ip` (VARCHAR(45)) en `eventos_auditoria`.
+- Se auditan `INICIO_SESION`, `INICIO_SESION_FALLIDO` (sin guardar el correo en claro: solo su hash SHA-256) y `CIERRE_SESION`, con la IP efectiva (`request.ip`, que respeta `TRUSTED_PROXY_CIDRS`). La auditoría del éxito se escribe en la misma transacción que la sesión; la de fallos y cierres es de mejor esfuerzo y no impide la respuesta.
+- `ProblemDetailsFilter` global (`APP_FILTER`): respuestas `application/problem+json` con `code` estable (`NO_AUTENTICADO`, `SIN_PERMISO`, `NO_ENCONTRADO`, `CONFLICTO`, `LIMITE_EXCEDIDO`, `SOLICITUD_INVALIDA`). Los errores de validación devuelven `VALIDACION_FALLIDA` con `errors[{field, message}]`.
+- `test/identity-migration.spec.ts` ya no asume que la migración de identidad es la última.

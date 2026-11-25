@@ -99,6 +99,10 @@ Los módulos de invitaciones, auditoría, adjuntos e integraciones conservan est
 - Compose con PostgreSQL 16 y las extensiones `pg_trgm`, `unaccent` y `vector`.
 - Pruebas unitarias y de extremo a extremo para salud y ciclo de sesión.
 
+## Errores y auditoría de acceso
+
+Todos los errores HTTP se devuelven como `application/problem+json` (RFC 7807) con `type`, `title`, `status`, `detail`, `instance` y un `code` estable. Los errores de validación usan `VALIDACION_FALLIDA` y listan `errors: [{ field, message }]`. El inicio de sesión, el intento fallido y el cierre de sesión se registran en `eventos_auditoria` con la IP del cliente; configura `TRUSTED_PROXY_CIDRS` para que la IP sea fiable detrás de un proxy.
+
 ## Pendiente
 
 El registro, la verificación de correo, las invitaciones, la aprobación administrativa, auditoría, adjuntos y gestión de solicitudes aún no tienen endpoints. El importador del catálogo se ejecuta por CLI; no expone una carga HTTP. Los controles compartidos de autorización todavía deben aplicarse en cada operación de negocio y cubrirse con pruebas de integración. Para enviar correo fuera de pruebas se deben configurar `SMTP_HOST` y `SMTP_FROM`; las credenciales `SMTP_USER` y `SMTP_PASSWORD` son opcionales, pero deben proporcionarse juntas. `SMTP_SECURE=false` exige STARTTLS; usa `true` para TLS implícito. También están pendientes límites por cuenta, búsqueda web, proveedores de IA, análisis y generación de informes. La API usa sesiones con cookie y CSRF, no JWT.

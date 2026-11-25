@@ -1,21 +1,30 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
+import type { Prisma } from '../../infrastructure/database/generated/client.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import type { AuthenticatedUser } from '../../common/auth/auth-context.js';
 
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$53PUPCI+M/TtKjVnO5JRpA$ko/LbHtOTytiF++bA/fQFp27BMb2iOQzQzcsuZ3N9lk';
 
+export type ContextoSolicitud = { ip?: string };
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
-  async signIn(email: string, password: string) {
+  async signIn(
+    email: string,
+    password: string,
+    contexto: ContextoSolicitud = {},
+  ) {
     const normalizedEmail = email.trim().toLowerCase();
     const user = await this.prisma.usuario.findUnique({
       where: { email: normalizedEmail },
@@ -45,6 +54,12 @@ export class AuthService {
       user.estado !== 'ACTIVO' ||
       !user.emailVerificadoEn
     ) {
+      await this.auditar({
+        actorId: user?.id ?? null,
+        accion: 'INICIO_SESION_FALLIDO',
+        ip: contexto.ip,
+        metadatos: { emailHash: hashToken(normalizedEmail) },
+      });
       throw new UnauthorizedException('Credenciales no válidas.');
     }
 
@@ -67,6 +82,14 @@ export class AuthService {
         where: { id: user.id },
         data: { ultimoAccesoEn: new Date() },
       });
+      await transaction.eventoAuditoria.create({
+        data: {
+          actorId: user.id,
+          accion: 'INICIO_SESION',
+          recurso: 'sesion_usuario',
+          ip: contexto.ip ?? null,
+        },
+      });
     });
 
     return {
@@ -85,11 +108,48 @@ export class AuthService {
     return csrfToken;
   }
 
-  async revokeSession(sessionId: string) {
+  async revokeSession(
+    sessionId: string,
+    actorId?: string,
+    contexto: ContextoSolicitud = {},
+  ) {
     await this.prisma.sesionUsuario.updateMany({
       where: { id: sessionId, revocadaEn: null },
       data: { revocadaEn: new Date() },
     });
+    await this.auditar({
+      actorId: actorId ?? null,
+      accion: 'CIERRE_SESION',
+      recursoId: sessionId,
+      ip: contexto.ip,
+    });
+  }
+
+  // La auditoría de un intento fallido o de un cierre no debe impedir la respuesta.
+  private async auditar(evento: {
+    actorId: string | null;
+    accion: string;
+    recursoId?: string;
+    ip?: string;
+    metadatos?: Prisma.InputJsonValue;
+  }) {
+    try {
+      await this.prisma.eventoAuditoria.create({
+        data: {
+          actorId: evento.actorId,
+          accion: evento.accion,
+          recurso: 'sesion_usuario',
+          recursoId: evento.recursoId ?? null,
+          ip: evento.ip ?? null,
+          ...(evento.metadatos ? { metadatos: evento.metadatos } : {}),
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `No se pudo registrar el evento ${evento.accion}.`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 }
 

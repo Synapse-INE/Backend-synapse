@@ -333,6 +333,7 @@ model EventoAuditoria {
   recurso   String   @db.VarChar(100)
   recursoId String?  @map("recurso_id") @db.VarChar(100)
   metadatos Json?    @db.JsonB
+  ip        String?  @db.VarChar(45)
   creadoEn  DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
 
   actor Usuario? @relation(fields: [actorId], references: [id], onDelete: SetNull)
