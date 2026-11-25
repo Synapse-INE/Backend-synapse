@@ -9,6 +9,7 @@ datasource db {
 
 enum EstadoUsuario {
   PENDIENTE_VERIFICACION
+  PENDIENTE_APROBACION
   ACTIVO
   BLOQUEADO
   DESACTIVADO
@@ -21,6 +22,14 @@ enum EstadoProveedor {
   INACTIVO
 
   @@map("estado_proveedor")
+}
+
+enum EstadoRevisionSolicitante {
+  PENDIENTE
+  VERIFICADO
+  RECHAZADO
+
+  @@map("estado_revision_solicitante")
 }
 
 enum EstadoProductoProveedor {
@@ -169,6 +178,8 @@ model Usuario {
   updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   proveedor               Proveedor?                @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+  perfilSolicitante       PerfilSolicitante?        @relation("PerfilSolicitanteUsuario")
+  perfilesRevisados       PerfilSolicitante[]       @relation("PerfilSolicitanteRevisor")
   roles                   UsuarioRol[]
   rolesAsignados          UsuarioRol[]              @relation("UsuarioRolAsignador")
   invitacionesCreadas     InvitacionProveedor[]     @relation("InvitacionCreador")
@@ -183,9 +194,44 @@ model Usuario {
   proveedoresConfirmados  ProveedorSolicitud[]      @relation("ProveedorSolicitudConfirmador")
   aliasModalidadRevisados AliasModalidad[]          @relation("AliasModalidadRevisadoPor")
   tokensVerificacion      TokenVerificacionCorreo[]
+  sesiones                SesionUsuario[]
 
   @@index([proveedorId])
   @@map("usuarios")
+}
+
+model InstitucionSolicitante {
+  id            String   @id @default(uuid()) @db.Uuid
+  nombreOficial String   @map("nombre_oficial") @db.VarChar(240)
+  nit           String?  @unique @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  perfiles    PerfilSolicitante[]
+  solicitudes SolicitudPrecio[]
+
+  @@map("instituciones_solicitantes")
+}
+
+model PerfilSolicitante {
+  id             String                    @id @default(uuid()) @db.Uuid
+  usuarioId      String                    @unique @map("usuario_id") @db.Uuid
+  institucionId  String                    @map("institucion_id") @db.Uuid
+  cargo          String?                   @db.VarChar(160)
+  dpiCifrado     String?                   @map("dpi_cifrado") @db.VarChar(512)
+  estadoRevision EstadoRevisionSolicitante @default(PENDIENTE) @map("estado_revision")
+  revisadoPorId  String?                   @map("revisado_por_id") @db.Uuid
+  revisadoEn     DateTime?                 @map("revisado_en") @db.Timestamptz(6)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  usuario     Usuario                @relation("PerfilSolicitanteUsuario", fields: [usuarioId], references: [id], onDelete: Cascade)
+  institucion InstitucionSolicitante @relation(fields: [institucionId], references: [id], onDelete: Restrict)
+  revisadoPor Usuario?               @relation("PerfilSolicitanteRevisor", fields: [revisadoPorId], references: [id], onDelete: SetNull)
+
+  @@index([institucionId, estadoRevision])
+  @@index([revisadoPorId])
+  @@map("perfiles_solicitantes")
 }
 
 model Rol {
@@ -226,6 +272,22 @@ model TokenVerificacionCorreo {
 
   @@index([usuarioId, venceEn])
   @@map("tokens_verificacion_correo")
+}
+
+model SesionUsuario {
+  id             String    @id @default(uuid()) @db.Uuid
+  usuarioId      String    @map("usuario_id") @db.Uuid
+  tokenHash      String    @unique @map("token_hash") @db.Char(64)
+  csrfTokenHash  String    @map("csrf_token_hash") @db.Char(64)
+  venceEn        DateTime  @map("vence_en") @db.Timestamptz(6)
+  revocadaEn     DateTime? @map("revocada_en") @db.Timestamptz(6)
+  creadaEn       DateTime  @default(now()) @map("creada_en") @db.Timestamptz(6)
+  ultimoAccesoEn DateTime? @map("ultimo_acceso_en") @db.Timestamptz(6)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, venceEn])
+  @@map("sesiones_usuario")
 }
 
 model Proveedor {
@@ -467,23 +529,25 @@ model ReferenciaINE {
 }
 
 model SolicitudPrecio {
-  id                     String              @id @default(uuid()) @db.Uuid
-  titulo                 String              @db.VarChar(200)
-  institucionSolicitante String              @map("institucion_solicitante") @db.VarChar(240)
-  descripcion            String              @db.Text
-  modalidad              ModalidadSolicitud?
-  unidadEjecutora        String?             @map("unidad_ejecutora") @db.VarChar(240)
-  fechaFormulario        DateTime?           @map("fecha_formulario") @db.Date
-  enlaceNombre           String?             @map("enlace_nombre") @db.VarChar(160)
-  enlaceCargo            String?             @map("enlace_cargo") @db.VarChar(160)
-  autoridadNombre        String?             @map("autoridad_nombre") @db.VarChar(160)
-  autoridadCargo         String?             @map("autoridad_cargo") @db.VarChar(160)
-  estado                 EstadoSolicitud     @default(RECIBIDA)
-  creadaPorId            String              @map("creada_por_id") @db.Uuid
-  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                       String              @id @default(uuid()) @db.Uuid
+  titulo                   String              @db.VarChar(200)
+  institucionSolicitante   String              @map("institucion_solicitante") @db.VarChar(240)
+  descripcion              String              @db.Text
+  modalidad                ModalidadSolicitud?
+  institucionSolicitanteId String?             @map("institucion_solicitante_id") @db.Uuid
+  unidadEjecutora          String?             @map("unidad_ejecutora") @db.VarChar(240)
+  fechaFormulario          DateTime?           @map("fecha_formulario") @db.Date
+  enlaceNombre             String?             @map("enlace_nombre") @db.VarChar(160)
+  enlaceCargo              String?             @map("enlace_cargo") @db.VarChar(160)
+  autoridadNombre          String?             @map("autoridad_nombre") @db.VarChar(160)
+  autoridadCargo           String?             @map("autoridad_cargo") @db.VarChar(160)
+  estado                   EstadoSolicitud     @default(RECIBIDA)
+  creadaPorId              String              @map("creada_por_id") @db.Uuid
+  createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   creadaPor            Usuario                  @relation("SolicitudCreador", fields: [creadaPorId], references: [id], onDelete: Restrict)
+  institucion          InstitucionSolicitante?  @relation(fields: [institucionSolicitanteId], references: [id], onDelete: SetNull)
   adjuntos             SolicitudAdjunto[]
   requisitos           RequisitoSolicitud[]
   productos            ProductoSolicitud[]
@@ -491,6 +555,7 @@ model SolicitudPrecio {
   justificaciones      JustificacionSolicitud[]
   comisionImportacion  ComisionImportacion?
 
+  @@index([institucionSolicitanteId])
   @@index([estado, createdAt])
   @@index([creadaPorId, createdAt])
   @@map("solicitudes_precio")

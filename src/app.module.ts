@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { MailModule } from './infrastructure/mail/mail.module.js';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import Joi from 'joi';
 import { AuditoriaModule } from './modules/auditoria/auditoria.module.js';
@@ -9,6 +10,7 @@ import { AdjuntosModule } from './modules/adjuntos/adjuntos.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { IntegracionesModule } from './modules/integraciones/integraciones.module.js';
 import { InvitacionesModule } from './modules/invitaciones/invitaciones.module.js';
+import { ReferenciasINEModule } from './modules/referencias-ine/referencias-ine.module.js';
 import { DatabaseModule } from './infrastructure/database/database.module.js';
 
 @Module({
@@ -23,16 +25,44 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
         PORT: Joi.number().port().default(3000),
         DATABASE_URL: Joi.string().min(1).required(),
         CORS_ORIGINS: Joi.string().min(1).default('http://localhost:5173'),
+        SESSION_TTL_SECONDS: Joi.number()
+          .integer()
+          .min(300)
+          .max(2_592_000)
+          .default(28_800),
+        SESSION_COOKIE_NAME: Joi.string()
+          .pattern(/^[A-Za-z0-9_-]+$/)
+          .default('ine_session'),
+        SESSION_COOKIE_SAME_SITE: Joi.string()
+          .valid('lax', 'strict', 'none')
+          .default('lax'),
+        COOKIE_DOMAIN: Joi.string().allow('').default(''),
+        TRUSTED_PROXY_CIDRS: Joi.string().allow('').default(''),
+        SMTP_HOST: Joi.string().allow('').optional(),
+        SMTP_PORT: Joi.number().port().default(587),
+        SMTP_USER: Joi.string().allow('').optional(),
+        SMTP_PASSWORD: Joi.string().allow('').optional(),
+        SMTP_FROM: Joi.string()
+          .pattern(/^[^\r\n]+$/)
+          .allow('')
+          .optional(),
+        SMTP_SECURE: Joi.boolean().default(false),
+        IMPORT_INE_MAX_FILE_BYTES: Joi.number()
+          .integer()
+          .min(1_048_576)
+          .default(52_428_800),
       }),
     }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     DatabaseModule,
+    MailModule,
     HealthModule,
     AuthModule,
     InvitacionesModule,
     AuditoriaModule,
     AdjuntosModule,
     IntegracionesModule,
+    ReferenciasINEModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

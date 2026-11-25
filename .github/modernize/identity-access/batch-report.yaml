@@ -1,0 +1,474 @@
+batch_id: 'B01'
+required_endpoints:
+  - method: POST
+    path: /api/v1/auth/iniciar-sesion
+    source: '.github/modernize/identity-access/spec.md'
+    status: implemented
+  - method: GET
+    path: /api/v1/auth/yo
+    source: '.github/modernize/identity-access/spec.md'
+    status: implemented
+  - method: GET
+    path: /api/v1/auth/csrf
+    source: '.github/modernize/identity-access/spec.md'
+    status: implemented
+  - method: POST
+    path: /api/v1/auth/cerrar-sesion
+    source: '.github/modernize/identity-access/spec.md'
+    status: implemented
+  - method: GET
+    path: /api/v1/salud
+    source: '.github/modernize/assessment/engines/facts/api-service-contracts.md'
+    status: implemented
+completed_tasks:
+  - T001
+  - T002
+  - T003
+  - T004
+  - T005
+  - T006
+  - T007
+  - T008
+  - T009
+  - T010
+  - T011
+  - T012
+  - T013
+protocol_violation: false
+blocked_tasks: []
+files_changed:
+  T001:
+    - file: '.env.example'
+      change_type: modified
+      description: Added session and trusted-proxy settings.
+    - file: 'README.md'
+      change_type: modified
+      description: Documented implemented authentication routes and remaining work.
+    - file: 'docs/estado-y-siguientes-pasos.md'
+      change_type: modified
+      description: Updated project status and the next implementation steps.
+    - file: 'docs/modelo-datos.md'
+      change_type: modified
+      description: Distinguished persisted identity models from unimplemented flows.
+    - file: '.github/modernize/identity-access/spec.md'
+      change_type: modified
+      description: Updated the status to reflect the implemented first authentication slice.
+    - file: '.github/modernize/identity-access/plan.md'
+      change_type: modified
+      description: Marked completed foundation and sign-in tasks.
+  T002:
+    - file: 'prisma/schema.prisma'
+      change_type: modified
+      description: Added requester institution/profile, session, approval state, and request relation.
+  T003:
+    - file: 'prisma/migrations/20261124030000_identity_access_sessions/migration.sql'
+      change_type: created
+      description: Added identity tables and safely renamed USUARIO to SOLICITANTE.
+  T004:
+    - file: 'test/identity-migration.spec.ts'
+      change_type: created
+      description: Exercises migration, role assignment preservation, indexes, and optional identity field.
+    - file: 'package.json'
+      change_type: modified
+      description: Declared PGlite for repeatable isolated migration tests.
+    - file: 'package-lock.json'
+      change_type: modified
+      description: Locked the PGlite development dependency.
+  T005:
+    - file: 'src/app.module.ts'
+      change_type: modified
+      description: Validates session, cookie, and proxy configuration.
+    - file: 'src/main.ts'
+      change_type: modified
+      description: Enables credentialed CORS, cookie parsing, and explicit proxy CIDRs.
+    - file: 'package.json'
+      change_type: modified
+      description: Includes Argon2id, cookie-parser, mail, and PGlite development dependencies.
+  T006:
+    - file: 'src/infrastructure/mail/mail.service.ts'
+      change_type: created
+      description: Provides configurable SMTP delivery, explicit missing-configuration errors, and a JSON-only test transport.
+    - file: 'src/infrastructure/mail/mail.module.ts'
+      change_type: created
+      description: Exports the mail adapter for onboarding modules.
+    - file: 'src/infrastructure/mail/mail.service.spec.ts'
+      change_type: created
+      description: Tests isolated test delivery, missing SMTP configuration, and header injection rejection.
+    - file: 'src/app.module.ts'
+      change_type: modified
+      description: Validates optional SMTP environment settings and registers MailModule.
+    - file: '.env.example'
+      change_type: modified
+      description: Documents blank-by-default SMTP settings.
+  T007:
+    - file: 'src/common/auth/auth-context.ts'
+      change_type: created
+      description: Defines the shared authenticated user and trusted ownership scope.
+    - file: 'src/common/auth/roles.decorator.ts'
+      change_type: created
+      description: Defines typed role metadata for protected routes.
+    - file: 'src/common/auth/roles.guard.ts'
+      change_type: created
+      description: Enforces required roles and denies missing authenticated context.
+    - file: 'src/common/auth/ownership.ts'
+      change_type: created
+      description: Checks explicitly selected user, provider, or institution ownership and denies missing IDs.
+    - file: 'src/common/auth/roles.guard.spec.ts'
+      change_type: created
+      description: Covers missing context, incorrect roles, matching roles, unannotated routes, and empty role metadata.
+    - file: 'src/common/auth/ownership.spec.ts'
+      change_type: created
+      description: Covers matching and absent or mismatched ownership scopes.
+    - file: 'src/modules/auth/auth.guard.ts'
+      change_type: modified
+      description: Adds trusted provider and institution scope IDs to the authenticated request context.
+    - file: 'src/modules/auth/auth.guard.spec.ts'
+      change_type: modified
+      description: Verifies the authenticated context includes database-derived ownership scopes.
+    - file: 'src/modules/auth/auth.module.ts'
+      change_type: modified
+      description: Registers the shared role guard globally.
+    - file: 'src/modules/auth/auth.service.ts'
+      change_type: modified
+      description: Uses the shared authenticated-user type from src/common/auth.
+    - file: 'src/modules/auth/auth.controller.ts'
+      change_type: modified
+      description: Uses the shared authenticated-request type from src/common/auth.
+    - file: 'src/modules/auth/auth.types.ts'
+      change_type: deleted
+      description: Moves shared authenticated request types into src/common/auth/auth-context.ts.
+    - file: '.github/modernize/assessment/engines/facts/api-service-contracts.md'
+      change_type: modified
+      description: Distinguishes available authorization helpers from route-level policies still pending.
+    - file: 'README.md'
+      change_type: modified
+      description: Documents available SMTP and authorization infrastructure without claiming unimplemented routes.
+    - file: 'docs/estado-y-siguientes-pasos.md'
+      change_type: modified
+      description: Updates implementation status and links the backend handoff.
+  T008:
+    - file: 'src/infrastructure/security/trusted-proxy-cidr.ts'
+      change_type: created
+      description: Validates explicit proxy IP/CIDR entries and rejects overly broad ranges.
+    - file: 'src/infrastructure/security/trusted-proxy-cidr.spec.ts'
+      change_type: created
+      description: Tests valid and invalid proxy ranges.
+    - file: 'test/auth.e2e-spec.ts'
+      change_type: created
+      description: Tests cookie flags, CSRF enforcement, and login throttling despite spoofed forwarded headers.
+  T009:
+    - file: 'src/modules/auth/auth.service.ts'
+      change_type: created
+      description: Verifies Argon2id credentials with generic failure behavior.
+  T010:
+    - file: 'src/modules/auth/auth.service.ts'
+      change_type: modified
+      description: Creates hashed opaque sessions with expiry and supports revocation.
+    - file: 'src/modules/auth/auth.types.ts'
+      change_type: created
+      description: Defines the safe authenticated-user context attached to requests.
+  T011:
+    - file: 'src/modules/auth/auth.guard.ts'
+      change_type: created
+      description: Requires valid sessions and session-bound CSRF tokens for writes.
+    - file: 'src/modules/auth/auth.service.ts'
+      change_type: modified
+      description: Issues and rotates CSRF tokens while storing only their hash.
+  T012:
+    - file: 'src/modules/auth/auth.controller.ts'
+      change_type: created
+      description: Implements sign-in, current-user, CSRF, and logout endpoints.
+    - file: 'src/modules/auth/sign-in.dto.ts'
+      change_type: created
+      description: Validates and normalizes sign-in email input.
+    - file: 'src/modules/auth/auth.module.ts'
+      change_type: modified
+      description: Registers authentication routes and the global session guard.
+    - file: 'src/modules/auth/public.decorator.ts'
+      change_type: created
+      description: Marks the health and sign-in handlers as public.
+    - file: 'src/modules/health/health.controller.ts'
+      change_type: modified
+      description: Keeps health endpoint explicitly public.
+    - file: '.github/modernize/assessment/engines/facts/api-service-contracts.md'
+      change_type: modified
+      description: Publishes current route and session contracts.
+  T013:
+    - file: 'src/modules/auth/auth.service.spec.ts'
+      change_type: modified
+      description: Covers valid, invalid, and ineligible account sign-in.
+    - file: 'src/modules/auth/auth.guard.spec.ts'
+      change_type: created
+      description: Covers missing, expired, revoked sessions and CSRF rejection.
+    - file: 'src/modules/auth/auth.controller.spec.ts'
+      change_type: created
+      description: Covers Secure cookie behavior for production and SameSite=None.
+    - file: 'test/auth.e2e-spec.ts'
+      change_type: created
+      description: Covers the HTTP session lifecycle and rate limiting.
+  T006:
+    - artifact: '.github/modernize/identity-access/spec.md#REQ-014'
+      used_for: 'Configurable SMTP delivery without hardcoding the provider.'
+  T007:
+    - artifact: '.github/modernize/identity-access/spec.md#REQ-008'
+      used_for: 'Shared role enforcement and resource-owner checks for future protected operations.'
+upstream_artifacts_consumed:
+  T002:
+    - artifact: '.github/modernize/identity-access/spec.md'
+      used_for: 'Account status, session, institution, and privacy-gate requirements.'
+    - artifact: 'docs/modelo-datos.md'
+      used_for: 'Existing identity and request relationships.'
+  T003:
+    - artifact: '.github/modernize/identity-access/spec.md#REQ-009'
+      used_for: 'Preserve requester role ID and assignments.'
+  T009:
+    - artifact: '.github/modernize/identity-access/spec.md#REQ-005'
+      used_for: 'Generic failure for invalid credentials and ineligible accounts.'
+  T010:
+    - artifact: '.github/modernize/identity-access/spec.md#REQ-006'
+      used_for: 'Opaque, expiring, revocable server-side sessions.'
+  T011:
+    - artifact: '.github/modernize/identity-access/spec.md#REQ-007'
+      used_for: 'Session-bound CSRF protection.'
+  T012:
+    - artifact: '.github/modernize/identity-access/spec.md#Initial API contract'
+      used_for: 'Route names and success response shapes.'
+evidence_mapping:
+  T002:
+    - upstream: '.github/modernize/identity-access/spec.md#Key Entities'
+      output: 'prisma/schema.prisma'
+      evidence: 'Prisma validation and PGlite migration test pass.'
+  T003:
+    - upstream: '.github/modernize/identity-access/spec.md#REQ-009'
+      output: 'prisma/migrations/20261124030000_identity_access_sessions/migration.sql'
+      evidence: 'PGlite test preserves the existing role ID and user-role assignment.'
+  T008:
+    - upstream: '.github/modernize/identity-access/spec.md#REQ-007, REQ-015, REQ-016'
+      output: 'src/infrastructure/security/trusted-proxy-cidr.ts and test/auth.e2e-spec.ts'
+      evidence: 'Unit tests validate CIDR entries; E2E tests verify cookie, CSRF, spoof resistance, and throttling.'
+  T009:
+    - upstream: '.github/modernize/identity-access/spec.md#REQ-005'
+      output: 'src/modules/auth/auth.service.ts'
+      evidence: 'AuthService tests pass for valid, unknown, invalid, and ineligible accounts.'
+  T010:
+    - upstream: '.github/modernize/identity-access/spec.md#REQ-006'
+      output: 'src/modules/auth/auth.service.ts and src/modules/auth/auth.guard.ts'
+      evidence: 'Unit and E2E tests pass for expiry, revocation, and session lifecycle.'
+  T011:
+    - upstream: '.github/modernize/identity-access/spec.md#REQ-007'
+      output: 'src/modules/auth/auth.guard.ts'
+      evidence: 'E2E rejects missing CSRF and accepts the current rotated token.'
+  T012:
+    - upstream: '.github/modernize/identity-access/spec.md#Initial API contract'
+      output: 'src/modules/auth/auth.controller.ts'
+      evidence: 'All four authentication endpoints return the contracted statuses.'
+  T013:
+    - upstream: '.github/modernize/identity-access/spec.md#User Story 1'
+      output: 'src/modules/auth/*.spec.ts and test/auth.e2e-spec.ts'
+      evidence: 'Unit and E2E suites pass.'
+  T006:
+    - upstream: '.github/modernize/identity-access/spec.md#REQ-014'
+      output: 'src/infrastructure/mail/mail.service.ts and its unit tests'
+      evidence: 'Tests confirm test-only JSON transport, explicit SMTP configuration failure, and rejection of header injection.'
+  T007:
+    - upstream: '.github/modernize/identity-access/spec.md#REQ-008'
+      output: 'src/common/auth/roles.guard.ts and src/common/auth/ownership.ts'
+      evidence: 'Focused tests cover role and ownership allow/deny cases; build, unit, E2E, and lint pass.'
+traceability:
+  - requirement: 'REQ-005'
+    plan_item: '2.1, 3.1'
+    task: 'T009'
+    files:
+      - 'src/modules/auth/auth.service.ts'
+      - 'src/modules/auth/auth.service.spec.ts'
+    status: completed
+  - requirement: 'REQ-006'
+    plan_item: '1.1, 2.1, 3.1'
+    task: 'T002, T003, T010, T013'
+    files:
+      - 'prisma/schema.prisma'
+      - 'prisma/migrations/20261124030000_identity_access_sessions/migration.sql'
+      - 'src/modules/auth/auth.service.ts'
+    status: completed
+  - requirement: 'REQ-007'
+    plan_item: '1.2, 2.2, 3.1'
+    task: 'T008, T011, T012, T013'
+    files:
+      - 'src/modules/auth/auth.guard.ts'
+      - 'src/modules/auth/auth.controller.ts'
+      - 'src/main.ts'
+      - 'test/auth.e2e-spec.ts'
+    status: completed
+  - requirement: 'REQ-008'
+    plan_item: '1.2, 2.2, 5.1'
+    task: 'T007, T019, T022'
+    files:
+      - 'src/common/auth/roles.guard.ts'
+      - 'src/common/auth/ownership.ts'
+      - 'src/modules/auth/auth.guard.ts'
+    status: partial
+  - requirement: 'REQ-009'
+    plan_item: '1.1'
+    task: 'T003, T004'
+    files:
+      - 'prisma/migrations/20261124030000_identity_access_sessions/migration.sql'
+      - 'test/identity-migration.spec.ts'
+    status: completed
+  - requirement: 'REQ-014'
+    plan_item: '1.2, 4.1, 4.2'
+    task: 'T006, T015, T017'
+    files:
+      - 'src/infrastructure/mail/mail.service.ts'
+      - 'src/infrastructure/mail/mail.module.ts'
+    status: partial
+  - requirement: 'REQ-013'
+    plan_item: '1.1, 2.1'
+    task: 'T002, T010, T011'
+    files:
+      - 'prisma/schema.prisma'
+      - 'src/modules/auth/auth.service.ts'
+    status: partial
+  - requirement: 'REQ-015'
+    plan_item: '1.2, 2.2'
+    task: 'T005, T008'
+    files:
+      - 'src/app.module.ts'
+      - 'src/main.ts'
+      - 'src/infrastructure/security/trusted-proxy-cidr.ts'
+    status: completed
+  - requirement: 'REQ-016'
+    plan_item: '1.2, 2.2, 3.1'
+    task: 'T008, T012, T013'
+    files:
+      - 'src/modules/auth/auth.controller.ts'
+      - 'test/auth.e2e-spec.ts'
+    status: partial
+  - requirement: 'REQ-018'
+    plan_item: '2.2, 3.1'
+    task: 'T012, T013'
+    files:
+      - 'src/modules/health/health.controller.ts'
+      - 'test/app.e2e-spec.ts'
+    status: completed
+warnings:
+  - 'PGlite validates the migration in isolation; apply and verify it against the deployment PostgreSQL before release.'
+  - 'Requester registration, email verification, provider invitations, endpoint-level authorization, audit integration, and DPI/CUI application encryption remain unimplemented.'
+test_results:
+  T001:
+    command: 'Documentation review'
+    passed: 1
+    failed: 0
+    skipped: 0
+    failures: []
+  T002:
+    command: 'npx prisma validate'
+    passed: 1
+    failed: 0
+    skipped: 0
+    failures: []
+  T003:
+    command: 'npm test (PGlite migration test)'
+    passed: 1
+    failed: 0
+    skipped: 0
+    failures: []
+  T004:
+    command: 'npm test'
+    passed: 25
+    failed: 0
+    skipped: 0
+    failures: []
+  T008:
+    command: 'npm run test:e2e; npm test'
+    passed: 28
+    failed: 0
+    skipped: 0
+    failures: []
+  T005:
+    command: 'npm run build'
+    passed: 1
+    failed: 0
+    skipped: 0
+    failures: []
+  T009:
+    command: 'npm test'
+    passed: 25
+    failed: 0
+    skipped: 0
+    failures: []
+  T010:
+    command: 'npm test; npm run test:e2e'
+    passed: 28
+    failed: 0
+    skipped: 0
+    failures: []
+  T011:
+    command: 'npm test; npm run test:e2e'
+    passed: 28
+    failed: 0
+    skipped: 0
+    failures: []
+  T012:
+    command: 'npm run test:e2e'
+    passed: 3
+    failed: 0
+    skipped: 0
+    failures: []
+  T013:
+    command: 'npm test; npm run test:e2e'
+    passed: 28
+    failed: 0
+    skipped: 0
+    failures: []
+  T006:
+    command: 'npm test'
+    passed: 37
+    failed: 0
+    skipped: 0
+    failures: []
+  T007:
+    command: 'npm test'
+    passed: 37
+    failed: 0
+    skipped: 0
+    failures: []
+  T007-build:
+    command: 'npm run build'
+    passed: 1
+    failed: 0
+    skipped: 0
+    failures: []
+  T007-lint:
+    command: 'npm run lint'
+    passed: 1
+    failed: 0
+    skipped: 0
+    failures: []
+  T007-e2e:
+    command: 'npm run test:e2e'
+    passed: 3
+    failed: 0
+    skipped: 0
+    failures: []
+endpoint_probes:
+  - method: POST
+    path: /api/v1/auth/iniciar-sesion
+    status: 200
+    result: PASS
+  - method: GET
+    path: /api/v1/auth/yo
+    status: 200
+    result: PASS
+  - method: GET
+    path: /api/v1/auth/csrf
+    status: 200
+    result: PASS
+  - method: POST
+    path: /api/v1/auth/cerrar-sesion
+    status: 204
+    result: PASS
+  - method: GET
+    path: /api/v1/salud
+    status: 200
+    result: PASS
+errors: []
