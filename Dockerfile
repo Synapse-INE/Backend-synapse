@@ -5,7 +5,7 @@ RUN apk add --no-cache openssl
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npm run db:generate
+ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN npm run build
 
 FROM node:22-alpine AS runtime

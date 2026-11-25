@@ -14,6 +14,7 @@ import {
 } from 'vitest';
 import { crearValidationPipe } from '../src/common/http/validation-pipe.js';
 import { PrismaService } from '../src/infrastructure/database/prisma.service.js';
+import { setupSwagger } from '../src/infrastructure/openapi/swagger.js';
 
 describe('Authentication endpoints', () => {
   const password = 'correct horse battery staple';
@@ -59,10 +60,11 @@ describe('Authentication endpoints', () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
+    setupSwagger(app, 'ine_session');
     app.use(cookieParser());
     app.useGlobalPipes(crearValidationPipe());
     await app.init();
-  });
+  }, 30_000);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -98,9 +100,34 @@ describe('Authentication endpoints', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previousNodeEnv;
+  });
+
+  it('publishes an OpenAPI document for implemented routes', async () => {
+    const docsPage = await request(app.getHttpServer())
+      .get('/api/v1/docs')
+      .expect(200);
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/openapi.json')
+      .expect(200);
+    const paths = Object.keys(response.body.paths);
+
+    expect(docsPage.text).toContain('swagger-ui');
+    expect(paths.some((path) => path.endsWith('/salud'))).toBe(true);
+    expect(paths.some((path) => path.endsWith('/auth/iniciar-sesion'))).toBe(
+      true,
+    );
+    expect(
+      response.body.components.securitySchemes['session-cookie'],
+    ).toMatchObject({
+      type: 'apiKey',
+      in: 'cookie',
+      name: 'ine_session',
+    });
   });
 
   it('creates a cookie session, rotates CSRF material, and revokes on logout', async () => {
