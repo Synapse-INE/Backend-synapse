@@ -74,8 +74,43 @@ enum EstadoSolicitud {
   EN_ANALISIS
   COMPLETADA
   RECHAZADA
+  PENDIENTE_SUBSANACION
+  EN_INVESTIGACION
+  EN_INFORME
+  EN_ENTREGA
 
   @@map("estado_solicitud")
+}
+
+enum TipoFuenteConsulta {
+  CATALOGO_INE
+  INSTITUCION
+  EMPRESA
+  OTRA
+
+  @@map("tipo_fuente_consulta")
+}
+
+enum TipoInformeSolicitud {
+  INFORME_TECNICO
+  OFICIO
+
+  @@map("tipo_informe_solicitud")
+}
+
+enum EstadoInformeSolicitud {
+  BORRADOR
+  EMITIDO
+
+  @@map("estado_informe_solicitud")
+}
+
+enum MedioEntrega {
+  DIGITAL
+  FISICA
+  CD
+
+  @@map("medio_entrega")
 }
 
 enum ModalidadSolicitud {
@@ -189,6 +224,14 @@ model Usuario {
   importacionesProveedor  ImportacionProveedor[]    @relation("ImportacionProveedorCreador")
   preciosRegistrados      PrecioProveedor[]         @relation("PrecioRegistradoPor")
   solicitudesCreadas      SolicitudPrecio[]         @relation("SolicitudCreador")
+  solicitudesAsignadas    SolicitudPrecio[]         @relation("SolicitudAsignadaA")
+  comentariosSolicitud    SolicitudComentario[]     @relation("ComentarioSolicitudAutor")
+  historialSolicitud      SolicitudHistorial[]      @relation("HistorialSolicitudActor")
+  consultasRegistradas    ConsultaMercado[]         @relation("ConsultaRegistradaPor")
+  validacionesConfirmadas ValidacionAnalisis[]      @relation("ValidacionConfirmadaPor")
+  informesElaborados      InformeSolicitud[]        @relation("InformeElaboradoPor")
+  entregasRegistradas     EntregaSolicitud[]        @relation("EntregaRegistradaPor")
+  notificaciones          Notificacion[]
   adjuntosSubidos         SolicitudAdjunto[]        @relation("AdjuntoSubidoPor")
   requisitosAprobados     RequisitoSolicitud[]      @relation("RequisitoAprobadoPor")
   justificacionesCreadas  JustificacionSolicitud[]  @relation("JustificacionCreador")
@@ -518,8 +561,9 @@ model ReferenciaINE {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  filaImportacion FilaImportacionINE @relation(fields: [filaImportacionId], references: [id], onDelete: Restrict)
-  tipoModalidad   TipoModalidad?     @relation(fields: [tipoModalidadId], references: [id], onDelete: Restrict)
+  filaImportacion   FilaImportacionINE @relation(fields: [filaImportacionId], references: [id], onDelete: Restrict)
+  tipoModalidad     TipoModalidad?     @relation(fields: [tipoModalidadId], references: [id], onDelete: Restrict)
+  preciosConsultados PrecioConsultado[]
 
   @@index([tipoModalidadId])
   @@index([nog])
@@ -544,13 +588,23 @@ model SolicitudPrecio {
   autoridadNombre          String?             @map("autoridad_nombre") @db.VarChar(160)
   autoridadCargo           String?             @map("autoridad_cargo") @db.VarChar(160)
   estado                   EstadoSolicitud     @default(RECIBIDA)
+  codigo                   String              @unique @db.VarChar(20)
   creadaPorId              String              @map("creada_por_id") @db.Uuid
+  asignadaAId              String?             @map("asignada_a_id") @db.Uuid
   enviadaEn                DateTime?           @map("enviada_en") @db.Timestamptz(6)
   createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   creadaPor            Usuario                  @relation("SolicitudCreador", fields: [creadaPorId], references: [id], onDelete: Restrict)
+  asignadaA            Usuario?                 @relation("SolicitudAsignadaA", fields: [asignadaAId], references: [id], onDelete: SetNull)
   institucion          InstitucionSolicitante?  @relation(fields: [institucionSolicitanteId], references: [id], onDelete: SetNull)
+  comentarios          SolicitudComentario[]
+  historial            SolicitudHistorial[]
+  consultas            ConsultaMercado[]
+  validaciones         ValidacionAnalisis[]
+  informes             InformeSolicitud[]
+  entregas             EntregaSolicitud[]
+  notificaciones       Notificacion[]
   adjuntos             SolicitudAdjunto[]
   requisitos           RequisitoSolicitud[]
   productos            ProductoSolicitud[]
@@ -561,7 +615,187 @@ model SolicitudPrecio {
   @@index([institucionSolicitanteId])
   @@index([estado, createdAt])
   @@index([creadaPorId, createdAt])
+  @@index([asignadaAId, estado])
   @@map("solicitudes_precio")
+}
+
+model SolicitudCorrelativo {
+  anio   Int @id
+  ultimo Int
+
+  @@map("solicitud_correlativo")
+}
+
+model SolicitudComentario {
+  id          String   @id @default(uuid()) @db.Uuid
+  solicitudId String   @map("solicitud_id") @db.Uuid
+  autorId     String   @map("autor_id") @db.Uuid
+  contenido   String   @db.VarChar(4000)
+  esInterno   Boolean  @default(false) @map("es_interno")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  solicitud SolicitudPrecio @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  autor     Usuario         @relation("ComentarioSolicitudAutor", fields: [autorId], references: [id], onDelete: Restrict)
+
+  @@index([solicitudId, createdAt])
+  @@map("solicitud_comentarios")
+}
+
+model SolicitudHistorial {
+  id             String   @id @default(uuid()) @db.Uuid
+  solicitudId    String   @map("solicitud_id") @db.Uuid
+  actorId        String?  @map("actor_id") @db.Uuid
+  accion         String   @db.VarChar(80)
+  estadoAnterior String?  @map("estado_anterior") @db.VarChar(40)
+  estadoNuevo    String?  @map("estado_nuevo") @db.VarChar(40)
+  detalle        String?  @db.VarChar(1000)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  solicitud SolicitudPrecio @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  actor     Usuario?        @relation("HistorialSolicitudActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([solicitudId, createdAt])
+  @@map("solicitud_historial")
+}
+
+model FuenteConsulta {
+  id        String             @id @default(uuid()) @db.Uuid
+  nombre    String             @db.VarChar(200)
+  tipo      TipoFuenteConsulta
+  pais      String             @default("GT") @db.Char(2)
+  dominio   String?            @db.VarChar(253)
+  activa    Boolean            @default(true)
+  nota      String?            @db.VarChar(500)
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  consultas ConsultaMercado[]
+
+  @@index([activa, tipo])
+  @@map("fuentes_consulta")
+}
+
+model ConsultaMercado {
+  id              String   @id @default(uuid()) @db.Uuid
+  solicitudId     String   @map("solicitud_id") @db.Uuid
+  fuenteId        String   @map("fuente_id") @db.Uuid
+  fechaConsulta   DateTime @map("fecha_consulta") @db.Date
+  nota            String?  @db.VarChar(1000)
+  evidencia       String?  @db.VarChar(500)
+  registradaPorId String   @map("registrada_por_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  solicitud     SolicitudPrecio    @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  fuente        FuenteConsulta     @relation(fields: [fuenteId], references: [id], onDelete: Restrict)
+  registradaPor Usuario            @relation("ConsultaRegistradaPor", fields: [registradaPorId], references: [id], onDelete: Restrict)
+  precios       PrecioConsultado[]
+
+  @@index([solicitudId, fechaConsulta])
+  @@map("consultas_mercado")
+}
+
+model PrecioConsultado {
+  id                  String   @id @default(uuid()) @db.Uuid
+  consultaId          String   @map("consulta_id") @db.Uuid
+  productoSolicitudId String   @map("producto_solicitud_id") @db.Uuid
+  precio              Decimal  @db.Decimal(14, 3)
+  moneda              String   @default("GTQ") @db.Char(3)
+  unidadMedida        String   @map("unidad_medida") @db.VarChar(120)
+  referenciaIneId     String?  @map("referencia_ine_id") @db.Uuid
+  esAtipico           Boolean  @default(false) @map("es_atipico")
+  observacion         String?  @db.VarChar(500)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  consulta          ConsultaMercado   @relation(fields: [consultaId], references: [id], onDelete: Cascade)
+  productoSolicitud ProductoSolicitud @relation(fields: [productoSolicitudId], references: [id], onDelete: Restrict)
+  referenciaIne     ReferenciaINE?    @relation(fields: [referenciaIneId], references: [id], onDelete: SetNull)
+
+  @@index([consultaId])
+  @@index([productoSolicitudId])
+  @@index([referenciaIneId])
+  @@map("precios_consultados")
+}
+
+model ValidacionAnalisis {
+  id                  String    @id @default(uuid()) @db.Uuid
+  solicitudId         String    @map("solicitud_id") @db.Uuid
+  productoSolicitudId String    @map("producto_solicitud_id") @db.Uuid
+  precioAdoptado      Decimal   @map("precio_adoptado") @db.Decimal(14, 3)
+  moneda              String    @default("GTQ") @db.Char(3)
+  unidadMedida        String    @map("unidad_medida") @db.VarChar(120)
+  criterio            String    @db.VarChar(1000)
+  notaAtipicos        String?   @map("nota_atipicos") @db.VarChar(1000)
+  confirmada          Boolean   @default(false)
+  confirmadaPorId     String?   @map("confirmada_por_id") @db.Uuid
+  confirmadaEn        DateTime? @map("confirmada_en") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  solicitud         SolicitudPrecio  @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  productoSolicitud ProductoSolicitud @relation(fields: [productoSolicitudId], references: [id], onDelete: Restrict)
+  confirmadaPor     Usuario?          @relation("ValidacionConfirmadaPor", fields: [confirmadaPorId], references: [id], onDelete: SetNull)
+
+  @@unique([solicitudId, productoSolicitudId])
+  @@index([productoSolicitudId])
+  @@map("validaciones_analisis")
+}
+
+model InformeSolicitud {
+  id             String                 @id @default(uuid()) @db.Uuid
+  solicitudId    String                 @map("solicitud_id") @db.Uuid
+  tipo           TipoInformeSolicitud
+  version        Int
+  destinatario   String                 @db.VarChar(240)
+  resumen        String                 @db.Text
+  estado         EstadoInformeSolicitud @default(BORRADOR)
+  elaboradoPorId String                 @map("elaborado_por_id") @db.Uuid
+  emitidoEn      DateTime?              @map("emitido_en") @db.Timestamptz(6)
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  solicitud    SolicitudPrecio    @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  elaboradoPor Usuario            @relation("InformeElaboradoPor", fields: [elaboradoPorId], references: [id], onDelete: Restrict)
+  entregas     EntregaSolicitud[]
+
+  @@unique([solicitudId, tipo, version])
+  @@index([solicitudId, estado])
+  @@map("informes_solicitud")
+}
+
+model EntregaSolicitud {
+  id              String       @id @default(uuid()) @db.Uuid
+  solicitudId     String       @map("solicitud_id") @db.Uuid
+  informeId       String?      @map("informe_id") @db.Uuid
+  medio           MedioEntrega
+  destinatario    String       @db.VarChar(240)
+  fechaEntrega    DateTime     @map("fecha_entrega") @db.Date
+  constancia      String       @db.VarChar(1000)
+  registradaPorId String       @map("registrada_por_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  solicitud     SolicitudPrecio   @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  informe       InformeSolicitud? @relation(fields: [informeId], references: [id], onDelete: Restrict)
+  registradaPor Usuario           @relation("EntregaRegistradaPor", fields: [registradaPorId], references: [id], onDelete: Restrict)
+
+  @@index([solicitudId, fechaEntrega])
+  @@index([informeId])
+  @@map("entregas_solicitud")
+}
+
+model Notificacion {
+  id          String    @id @default(uuid()) @db.Uuid
+  usuarioId   String    @map("usuario_id") @db.Uuid
+  solicitudId String    @map("solicitud_id") @db.Uuid
+  titulo      String    @db.VarChar(160)
+  detalle     String    @db.VarChar(500)
+  leidaEn     DateTime? @map("leida_en") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  usuario   Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  solicitud SolicitudPrecio @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, leidaEn, createdAt])
+  @@map("notificaciones")
 }
 
 model SolicitudAdjunto {
@@ -625,8 +859,10 @@ model ProductoSolicitud {
   createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  solicitud       SolicitudPrecio              @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
-  cotizaciones    CotizacionProducto[]
+  solicitud          SolicitudPrecio              @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  cotizaciones       CotizacionProducto[]
+  preciosConsultados PrecioConsultado[]
+  validaciones       ValidacionAnalisis[]
   proveedores     ProveedorSolicitudProducto[]
   justificaciones JustificacionSolicitud[]
   adjuntos        SolicitudAdjunto[]

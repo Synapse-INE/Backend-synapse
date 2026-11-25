@@ -14,6 +14,9 @@ import { RegistroModule } from './modules/registro/registro.module.js';
 import { SolicitudesModule } from './modules/solicitudes/solicitudes.module.js';
 import { SolicitantesModule } from './modules/solicitantes/solicitantes.module.js';
 import { InvitacionesModule } from './modules/invitaciones/invitaciones.module.js';
+import { FuentesConsultaModule } from './modules/fuentes-consulta/fuentes-consulta.module.js';
+import { NotificacionesModule } from './modules/notificaciones/notificaciones.module.js';
+import { PersonalIneModule } from './modules/personal-ine/personal-ine.module.js';
 import { ReferenciasINEModule } from './modules/referencias-ine/referencias-ine.module.js';
 import { DatabaseModule } from './infrastructure/database/database.module.js';
 
@@ -71,6 +74,9 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
     RegistroModule,
     SolicitantesModule,
     SolicitudesModule,
+    FuentesConsultaModule,
+    NotificacionesModule,
+    PersonalIneModule,
     AuditoriaModule,
     AdjuntosModule,
     IntegracionesModule,
