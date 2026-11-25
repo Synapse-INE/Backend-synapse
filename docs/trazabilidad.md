@@ -31,3 +31,13 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - Corregido un rechazo no manejado en `auth.service.spec.ts` (ambas promesas se esperan ahora con `Promise.allSettled`).
 - README: añadidas instrucciones de instalación y nota sobre el cambio de nombre de la migración de sesiones.
 - Pendiente de decisión: reincorporar IP en auditoría y respuestas RFC 7807 con `code` estable sobre la auth actual.
+
+## 2026-11-24 — Revisión de filas `REVISAR` y alias pendientes del catálogo INE
+
+**Rama:** `fix/importador-reglas-revision`
+
+- 898 filas con `FECHA_INVALIDA` traían `30/11/-0001`, la fecha cero de Excel usada como «sin fecha». Ahora se normalizan a `NULL` sin observación; el valor original se conserva en `datos_originales`.
+- 490 alias `Contrato Abierto Número NN-AAAA`, uno `Contrato Abierto NN-AAAA` y el error tipográfico `Bienes y suminstros importados` (revisado manualmente) se confirman automáticamente. El sufijo `NN-AAAA` se guarda en `referencia_contrato`.
+- Nuevo comando `npm run reprocesar:ine` para reaplicar las reglas a lotes ya importados (necesario porque la importación es idempotente por hash).
+- Resultado tras reprocesar en PostgreSQL: 7,783 filas `NORMALIZADA` y 5 `REVISAR` (precio `Sin Dato`, filas 3193, 3867, 4240, 5220 y 5782 del libro); 495 alias `CONFIRMADO` y 0 pendientes.
+- Pendiente: el INE debe indicar el precio de esas 5 filas o confirmar que se excluyen de estadísticas.
