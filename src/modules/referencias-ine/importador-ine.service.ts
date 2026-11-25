@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import ExcelJS from 'exceljs';
+import { Prisma as PrismaNamespace } from '../../infrastructure/database/generated/client.js';
 import type { Prisma } from '../../infrastructure/database/generated/client.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import {
@@ -229,8 +230,154 @@ export class ImportadorINEService {
     }
   }
 
+  /**
+   * Reaplica la normalización vigente a las filas ya almacenadas, a partir de
+   * sus datos originales, sin volver a leer el libro. Conserva el staging y
+   * actualiza estado, observaciones, modalidad y fechas de cada referencia.
+   */
+  async reprocesar({
+    importacionId,
+    usuarioId,
+  }: {
+    importacionId?: string;
+    usuarioId?: string;
+  } = {}) {
+    const importaciones = await this.prisma.importacionINE.findMany({
+      where: importacionId ? { id: importacionId } : {},
+      select: { id: true },
+    });
+    if (importacionId && importaciones.length === 0) {
+      throw new Error('No existe la importación indicada.');
+    }
+
+    const tiposModalidad = await this.obtenerTiposModalidad();
+    const resultados: ResultadoImportacionINE[] = [];
+
+    for (const { id } of importaciones) {
+      let aceptadas = 0;
+      let observaciones = 0;
+      let cursor: string | undefined;
+
+      for (;;) {
+        const filas = await this.prisma.filaImportacionINE.findMany({
+          where: { importacionId: id },
+          orderBy: { id: 'asc' },
+          take: TAMANO_LOTE,
+          ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        });
+        if (filas.length === 0) {
+          break;
+        }
+        cursor = filas[filas.length - 1].id;
+
+        await this.prisma.$transaction(async (tx) => {
+          for (const fila of filas) {
+            const celdas = (
+              fila.datosOriginales as {
+                celdas: Array<{
+                  columna: number;
+                  encabezado: string;
+                  valor: string | null;
+                }>;
+              }
+            ).celdas;
+            const columnas = this.mapearColumnas(celdas);
+            const valores = Object.fromEntries(
+              columnas.map((columna) => [
+                columna.clave,
+                celdas.find((celda) => celda.columna === columna.columna)
+                  ?.valor ?? null,
+              ]),
+            ) as ValoresFilaINE;
+            const normalizada = normalizarFilaINE(valores);
+            const tipoModalidadId = await this.resolverAliasModalidad(
+              tx,
+              normalizada.datos.modalidadOriginal,
+              normalizada.datos.tipoModalidadCodigo,
+              tiposModalidad,
+            );
+            const estado = normalizada.errores.length ? 'REVISAR' : 'NORMALIZADA';
+
+            await tx.filaImportacionINE.update({
+              where: { id: fila.id },
+              data: {
+                estado,
+                errores: normalizada.errores.length
+                  ? (normalizada.errores as Prisma.InputJsonValue)
+                  : PrismaNamespace.DbNull,
+              },
+            });
+            await tx.referenciaINE.update({
+              where: { filaImportacionId: fila.id },
+              data: {
+                tipoModalidadId,
+                modalidadOriginal: normalizada.datos.modalidadOriginal,
+                referenciaContrato: normalizada.datos.referenciaContrato,
+                nog: normalizada.datos.nog,
+                eventoOriginal: normalizada.datos.eventoOriginal,
+                correlativo: normalizada.datos.correlativo,
+                producto: normalizada.datos.producto,
+                caracteristicas: normalizada.datos.caracteristicas,
+                presentacion: normalizada.datos.presentacion,
+                precioReferencia: normalizada.datos.precioReferencia,
+                fechaPublicacion: normalizada.datos.fechaPublicacion,
+                vigenciaHasta: normalizada.datos.vigenciaHasta,
+                categoriaOriginal: normalizada.datos.categoriaOriginal,
+              },
+            });
+
+            if (estado === 'NORMALIZADA') {
+              aceptadas += 1;
+            } else {
+              observaciones += 1;
+            }
+          }
+        });
+      }
+
+      const actualizada = await this.prisma.$transaction(async (tx) => {
+        const importacion = await tx.importacionINE.update({
+          where: { id },
+          data: {
+            estado: observaciones ? 'PARCIAL' : 'COMPLETADA',
+            filasAceptadas: aceptadas,
+            filasConObservaciones: observaciones,
+          },
+        });
+        if (usuarioId) {
+          await tx.eventoAuditoria.create({
+            data: {
+              actorId: usuarioId,
+              accion: 'IMPORTACION_INE_REPROCESADA',
+              recurso: 'importacion_ine',
+              recursoId: id,
+              metadatos: {
+                filasAceptadas: aceptadas,
+                filasConObservaciones: observaciones,
+              },
+            },
+          });
+        }
+        return importacion;
+      });
+      resultados.push(this.aResultado(actualizada, true));
+    }
+
+    return resultados;
+  }
+
   private obtenerColumnas(hoja: ExcelJS.Worksheet): ColumnaMapeada[] {
     const encabezados = hoja.getRow(FILA_ENCABEZADOS);
+    const disponibles = Array.from({ length: hoja.columnCount }, (_, indice) => ({
+      columna: indice + 1,
+      encabezado: encabezados.getCell(indice + 1).text,
+    }));
+    return this.mapearColumnas(disponibles);
+  }
+
+  private mapearColumnas(
+    columnasFuente: Array<{ columna: number; encabezado: string }>,
+  ): ColumnaMapeada[] {
     const requeridas: Array<{ clave: keyof ValoresFilaINE; encabezado: string }> = [
       { clave: 'correlativo', encabezado: 'correlativo' },
       { clave: 'modalidadPrincipal', encabezado: 'modalidad' },
@@ -245,10 +392,9 @@ export class ImportadorINEService {
       { clave: 'categoriaOriginal', encabezado: 'categoria' },
       { clave: 'vigenciaHasta', encabezado: 'vigencia hasta' },
     ];
-    const disponibles = Array.from({ length: hoja.columnCount }, (_, indice) => ({
-      columna: indice + 1,
-      encabezado: encabezados.getCell(indice + 1).text,
-      claveComparacion: this.claveEncabezado(encabezados.getCell(indice + 1).text),
+    const disponibles = columnasFuente.map((columna) => ({
+      ...columna,
+      claveComparacion: this.claveEncabezado(columna.encabezado),
     }));
     const usados = new Set<number>();
 
