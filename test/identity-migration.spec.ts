@@ -17,12 +17,13 @@ describe('identity migration', () => {
   });
 
   it('creates session and requester profile tables without losing role assignments', async () => {
-    const migrations = (await readdir(migrationRoot, { withFileTypes: true }))
+    const identityMigration = '20261124030000_identity_access_sessions';
+    const todas = (await readdir(migrationRoot, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory() && /^\d{14}_/.test(entry.name))
       .map((entry) => entry.name)
       .sort();
-    const identityMigration = migrations.pop();
-    expect(identityMigration).toBe('20261124030000_identity_access_sessions');
+    expect(todas).toContain(identityMigration);
+    const migrations = todas.filter((nombre) => nombre < identityMigration);
 
     for (const migration of migrations) {
       await database.exec(
