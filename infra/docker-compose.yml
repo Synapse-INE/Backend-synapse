@@ -16,8 +16,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+  migrate:
+    image: synapse-api
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-precios}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-precios_referencia}
+    depends_on:
+      database:
+        condition: service_healthy
 
   api:
+    image: synapse-api
     build:
       context: ..
       dockerfile: Dockerfile
@@ -25,6 +37,7 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-3000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-precios}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-precios_referencia}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-ine_session}

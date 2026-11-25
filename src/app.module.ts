@@ -29,6 +29,7 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
         PORT: Joi.number().port().default(3000),
         DATABASE_URL: Joi.string().min(1).required(),
         CORS_ORIGINS: Joi.string().min(1).default('http://localhost:5173'),
+        SWAGGER_ENABLED: Joi.boolean().default(false),
         SESSION_TTL_SECONDS: Joi.number()
           .integer()
           .min(300)
