@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ProblemDetailsFilter } from './common/http/problem-details.filter.js';
 import { ConfigModule } from '@nestjs/config';
 import { MailModule } from './infrastructure/mail/mail.module.js';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -64,6 +65,9 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
     IntegracionesModule,
     ReferenciasINEModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_FILTER, useClass: ProblemDetailsFilter },
+  ],
 })
 export class AppModule {}

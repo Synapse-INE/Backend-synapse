@@ -1,9 +1,9 @@
-import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { crearValidationPipe } from './common/http/validation-pipe.js';
 import { ConfigService } from '@nestjs/config';
 import { isValidTrustedProxyCidr } from './infrastructure/security/trusted-proxy-cidr.js';
 
@@ -51,13 +51,7 @@ async function bootstrap() {
       xFrameOptions: { action: 'deny' },
     }),
   );
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  app.useGlobalPipes(crearValidationPipe());
 
   await app.listen(port, '0.0.0.0');
 }

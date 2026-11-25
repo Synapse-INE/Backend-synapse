@@ -32,12 +32,11 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - README: añadidas instrucciones de instalación y nota sobre el cambio de nombre de la migración de sesiones.
 - Pendiente de decisión: reincorporar IP en auditoría y respuestas RFC 7807 con `code` estable sobre la auth actual.
 
-## 2026-11-24 — Revisión de filas `REVISAR` y alias pendientes del catálogo INE
+## 2026-11-24 — Auditoría de acceso con IP y errores RFC 7807
 
-**Rama:** `fix/importador-reglas-revision`
+**Rama:** `feat/auth-auditoria-rfc7807`
 
-- 898 filas con `FECHA_INVALIDA` traían `30/11/-0001`, la fecha cero de Excel usada como «sin fecha». Ahora se normalizan a `NULL` sin observación; el valor original se conserva en `datos_originales`.
-- 490 alias `Contrato Abierto Número NN-AAAA`, uno `Contrato Abierto NN-AAAA` y el error tipográfico `Bienes y suminstros importados` (revisado manualmente) se confirman automáticamente. El sufijo `NN-AAAA` se guarda en `referencia_contrato`.
-- Nuevo comando `npm run reprocesar:ine` para reaplicar las reglas a lotes ya importados (necesario porque la importación es idempotente por hash).
-- Resultado tras reprocesar en PostgreSQL: 7,783 filas `NORMALIZADA` y 5 `REVISAR` (precio `Sin Dato`, filas 3193, 3867, 4240, 5220 y 5782 del libro); 495 alias `CONFIRMADO` y 0 pendientes.
-- Pendiente: el INE debe indicar el precio de esas 5 filas o confirmar que se excluyen de estadísticas.
+- Migración `20261124040000_auditoria_ip`: columna `ip` (VARCHAR(45)) en `eventos_auditoria`.
+- Se auditan `INICIO_SESION`, `INICIO_SESION_FALLIDO` (sin guardar el correo en claro: solo su hash SHA-256) y `CIERRE_SESION`, con la IP efectiva (`request.ip`, que respeta `TRUSTED_PROXY_CIDRS`). La auditoría del éxito se escribe en la misma transacción que la sesión; la de fallos y cierres es de mejor esfuerzo y no impide la respuesta.
+- `ProblemDetailsFilter` global (`APP_FILTER`): respuestas `application/problem+json` con `code` estable (`NO_AUTENTICADO`, `SIN_PERMISO`, `NO_ENCONTRADO`, `CONFLICTO`, `LIMITE_EXCEDIDO`, `SOLICITUD_INVALIDA`). Los errores de validación devuelven `VALIDACION_FALLIDA` con `errors[{field, message}]`.
+- `test/identity-migration.spec.ts` ya no asume que la migración de identidad es la última.
