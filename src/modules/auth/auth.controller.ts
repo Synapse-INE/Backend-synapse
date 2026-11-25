@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -11,13 +10,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
-import type { CookieOptions, Request, Response } from 'express';
+import type { CookieOptions, Response } from 'express';
+import type { AuthenticatedRequest } from '../../common/auth/auth-context.js';
 import { AuthService } from './auth.service.js';
-import { LoginDto } from './dto/login.dto.js';
-import { CurrentUser } from './decorators/current-user.decorator.js';
-import { Public } from './decorators/public.decorator.js';
-import { SkipCsrf } from './decorators/skip-csrf.decorator.js';
-import type { AuthPrincipal } from './auth.types.js';
+import { Public } from './public.decorator.js';
+import { SignInDto } from './sign-in.dto.js';
 
 @Controller('auth')
 export class AuthController {
@@ -26,153 +23,64 @@ export class AuthController {
     private readonly config: ConfigService,
   ) {}
 
-  @Post('login')
+  @Post('iniciar-sesion')
   @Public()
-  @SkipCsrf()
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async login(
-    @Body() dto: LoginDto,
-    @Req() request: Request,
+  async signIn(
+    @Body() body: SignInDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.authService.iniciarSesion(dto, request.ip);
-    this.escribirCookies(response, result.tokens);
-    return { usuario: result.principal, csrfToken: result.tokens.csrfToken };
-  }
-
-  @Post('refresh')
-  @Public()
-  @SkipCsrf()
-  @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  async refresh(
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-  ) {
-    this.validarCsrfDobleEnvio(request);
-    const result = await this.authService.refrescarSesion(
-      this.refreshToken(request),
-      this.csrfToken(request),
-      request.ip,
+    const result = await this.authService.signIn(body.email, body.password);
+    response.cookie(
+      this.config.getOrThrow<string>('SESSION_COOKIE_NAME'),
+      result.sessionToken,
+      {
+        ...this.cookieOptions(),
+        httpOnly: true,
+        maxAge: this.config.getOrThrow<number>('SESSION_TTL_SECONDS') * 1000,
+      },
     );
-    this.escribirCookies(response, result.tokens);
-    return { usuario: result.principal, csrfToken: result.tokens.csrfToken };
+    return { usuario: result.usuario, csrfToken: result.csrfToken };
   }
 
-  @Post('logout')
-  @Public()
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-  ) {
-    await this.authService.cerrarSesion(this.refreshTokenOrUndefined(request), request.ip);
-    this.borrarCookies(response);
-  }
-
-  @Get('me')
-  me(@CurrentUser() usuario: AuthPrincipal) {
-    return { usuario };
+  @Get('yo')
+  getCurrentUser(@Req() request: AuthenticatedRequest) {
+    return { usuario: request.auth.usuario };
   }
 
   @Get('csrf')
-  @Public()
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  async csrf(
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-  ) {
-    const csrfToken = await this.authService.renovarCsrf(this.refreshToken(request));
-    response.cookie(
-      this.config.getOrThrow<string>('AUTH_CSRF_COOKIE_NAME'),
-      csrfToken,
-      this.csrfCookieOptions(),
-    );
-    return { csrfToken };
-  }
-
-  private escribirCookies(
-    response: Response,
-    tokens: { accessToken: string; refreshToken: string; csrfToken: string },
-  ) {
-    response.cookie(
-      this.config.getOrThrow<string>('AUTH_ACCESS_COOKIE_NAME'),
-      tokens.accessToken,
-      { ...this.httpOnlyCookieOptions(), maxAge: this.accessTtlMilliseconds() },
-    );
-    response.cookie(
-      this.config.getOrThrow<string>('AUTH_REFRESH_COOKIE_NAME'),
-      tokens.refreshToken,
-      this.httpOnlyCookieOptions(),
-    );
-    response.cookie(
-      this.config.getOrThrow<string>('AUTH_CSRF_COOKIE_NAME'),
-      tokens.csrfToken,
-      this.csrfCookieOptions(),
-    );
-  }
-
-  private borrarCookies(response: Response) {
-    response.clearCookie(
-      this.config.getOrThrow<string>('AUTH_ACCESS_COOKIE_NAME'),
-      this.httpOnlyCookieOptions(),
-    );
-    response.clearCookie(
-      this.config.getOrThrow<string>('AUTH_REFRESH_COOKIE_NAME'),
-      this.httpOnlyCookieOptions(),
-    );
-    response.clearCookie(
-      this.config.getOrThrow<string>('AUTH_CSRF_COOKIE_NAME'),
-      this.csrfCookieOptions(),
-    );
-  }
-
-  private httpOnlyCookieOptions(): CookieOptions {
-    const refreshTtlDays = this.config.getOrThrow<number>('AUTH_REFRESH_TTL_DAYS');
+  async getCsrfToken(@Req() request: AuthenticatedRequest) {
     return {
-      httpOnly: true,
-      secure: this.config.getOrThrow<boolean>('COOKIE_SECURE'),
-      sameSite: 'strict',
-      path: '/',
-      maxAge: refreshTtlDays * 24 * 60 * 60 * 1000,
+      csrfToken: await this.authService.rotateCsrfToken(request.auth.sessionId),
     };
   }
 
-  private csrfCookieOptions(): CookieOptions {
-    return { ...this.httpOnlyCookieOptions(), httpOnly: false };
+  @Post('cerrar-sesion')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async signOut(
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    await this.authService.revokeSession(request.auth.sessionId);
+    response.clearCookie(
+      this.config.getOrThrow<string>('SESSION_COOKIE_NAME'),
+      { ...this.cookieOptions(), httpOnly: true },
+    );
   }
 
-  private accessTtlMilliseconds() {
-    return this.config.getOrThrow<number>('JWT_ACCESS_TTL_SECONDS') * 1000;
-  }
-
-  private refreshToken(request: Request) {
-    return this.refreshTokenOrUndefined(request) ?? '';
-  }
-
-  private refreshTokenOrUndefined(request: Request) {
-    return request.cookies?.[
-      this.config.getOrThrow<string>('AUTH_REFRESH_COOKIE_NAME')
-    ] as string | undefined;
-  }
-
-  private csrfToken(request: Request) {
-    const header = this.config
-      .getOrThrow<string>('AUTH_CSRF_HEADER_NAME')
-      .toLowerCase();
-    const token = request.headers[header];
-    return Array.isArray(token) ? token[0] : token ?? '';
-  }
-
-  private validarCsrfDobleEnvio(request: Request) {
-    const csrfCookieName = this.config.getOrThrow<string>('AUTH_CSRF_COOKIE_NAME');
-    const csrfToken = this.csrfToken(request);
-    if (!csrfToken || csrfToken !== request.cookies?.[csrfCookieName]) {
-      throw new ForbiddenException({
-        code: 'CSRF_INVALIDO',
-        detail: 'La solicitud no contiene un token CSRF válido.',
-      });
-    }
+  private cookieOptions(): CookieOptions {
+    const domain = this.config.get<string>('COOKIE_DOMAIN')?.trim();
+    const sameSite =
+      this.config.get<'lax' | 'strict' | 'none'>('SESSION_COOKIE_SAME_SITE') ??
+      'lax';
+    return {
+      path: '/',
+      secure:
+        this.config.get<string>('NODE_ENV') === 'production' ||
+        sameSite === 'none',
+      sameSite,
+      ...(domain ? { domain } : {}),
+    };
   }
 }

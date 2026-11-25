@@ -1,14 +1,20 @@
-import { resolve } from 'node:path';
+import ExcelJS from 'exceljs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { ImportadorINEService } from './importador-ine.service.js';
 
 describe('ImportadorINEService', () => {
-  it('importa el libro real preservando sus doce columnas y las modalidades duplicadas', async () => {
+  it('preserva las doce columnas fuente y las modalidades duplicadas', async () => {
     let secuenciaFila = 0;
     const filasStaging: Array<Record<string, unknown>> = [];
     const referencias: Array<Record<string, unknown>> = [];
-    const alias = new Map<string, { estado: string; tipoModalidadId: string | null }>();
+    const alias = new Map<
+      string,
+      { estado: string; tipoModalidadId: string | null }
+    >();
     const tipos = new Map<string, string>();
     const transactionClient = {
       filaImportacionINE: {
@@ -61,35 +67,74 @@ describe('ImportadorINEService', () => {
           return tipo;
         }),
       },
-      $transaction: vi.fn(async (operation: any) => operation(transactionClient)),
+      $transaction: vi.fn(async (operation: any) =>
+        operation(transactionClient),
+      ),
     } as unknown as PrismaService;
     const config = {
       getOrThrow: vi.fn().mockReturnValue(52_428_800),
     };
     const service = new ImportadorINEService(prisma, config as never);
 
-    const resultado = await service.importar({
-      archivo: resolve('C:/Users/Carlos/Downloads/INE-Precios de Referencia.xlsx'),
-    });
+    const directorioTemporal = await mkdtemp(join(tmpdir(), 'ine-import-'));
+    const archivo = join(directorioTemporal, 'catalogo.xlsx');
+    const workbook = new ExcelJS.Workbook();
+    const hoja = workbook.addWorksheet('Referencias');
+    hoja.addRow(['Catálogo de precios']);
+    hoja.addRow([
+      'Correlativo',
+      'Modalidad',
+      'NOG',
+      'Evento',
+      'Modalidad',
+      'Producto',
+      'Características',
+      'Presentación',
+      'Precio de referencia Q',
+      'Fecha de publicación',
+      'Categoría',
+      'Vigencia hasta',
+    ]);
+    hoja.addRow([
+      '1',
+      'Contrato Abierto',
+      '12345678',
+      'Evento de prueba',
+      'Contrato Abierto',
+      'Guantes de nitrilo',
+      'Talla mediana',
+      'Caja',
+      '1,347.990',
+      '15/01/2025',
+      'Suministros',
+      '15/01/2026',
+    ]);
 
-    expect(resultado).toMatchObject({
-      importacionId: 'importacion-prueba',
-      yaExistia: false,
-      filasLeidas: 7788,
-      filasRechazadas: 0,
-    });
-    expect(filasStaging).toHaveLength(7788);
-    expect(referencias).toHaveLength(7788);
+    try {
+      await workbook.xlsx.writeFile(archivo);
+      const resultado = await service.importar({ archivo });
 
-    const primeraFila = filasStaging[0];
-    const datosOriginales = primeraFila.datosOriginales as {
-      celdas: Array<{ encabezado: string }>;
-    };
-    expect(datosOriginales.celdas).toHaveLength(12);
-    expect(datosOriginales.celdas[1]?.encabezado).toBe('Modalidad');
-    expect(datosOriginales.celdas[4]?.encabezado).toBe('Modalidad');
-    expect(referencias[0]).toMatchObject({
-      precioReferencia: '1347.990',
-    });
-  }, 30_000);
+      expect(resultado).toMatchObject({
+        importacionId: 'importacion-prueba',
+        yaExistia: false,
+        filasLeidas: 1,
+        filasRechazadas: 0,
+      });
+      expect(filasStaging).toHaveLength(1);
+      expect(referencias).toHaveLength(1);
+
+      const primeraFila = filasStaging[0];
+      const datosOriginales = primeraFila?.datosOriginales as {
+        celdas: Array<{ encabezado: string }>;
+      };
+      expect(datosOriginales.celdas).toHaveLength(12);
+      expect(datosOriginales.celdas[1]?.encabezado).toBe('Modalidad');
+      expect(datosOriginales.celdas[4]?.encabezado).toBe('Modalidad');
+      expect(referencias[0]).toMatchObject({
+        precioReferencia: '1347.990',
+      });
+    } finally {
+      await rm(directorioTemporal, { recursive: true, force: true });
+    }
+  });
 });

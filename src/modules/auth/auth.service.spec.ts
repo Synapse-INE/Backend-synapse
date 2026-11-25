@@ -1,92 +1,135 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+import argon2 from 'argon2';
 import { createHash } from 'node:crypto';
-import { describe, expect, it, vi } from 'vitest';
-import type { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { UnauthorizedException } from '@nestjs/common';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { AuthService } from './auth.service.js';
 
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
-
-function sesionActiva() {
-  return {
-    id: '00000000-0000-4000-8000-000000000010',
-    usuarioId: '00000000-0000-4000-8000-000000000011',
-    csrfTokenHash: hash('csrf-prueba'),
-    venceEn: new Date(Date.now() + 60_000),
-    revocadaEn: null,
-    rotadaEn: null,
-    usuario: {
-      id: '00000000-0000-4000-8000-000000000011',
-      email: 'admin@ine.gob.gt',
-      nombre: 'Administrador',
-      proveedorId: null,
-      estado: 'ACTIVO',
-      roles: [{ rol: { codigo: 'ADMIN' } }],
-    },
-  };
-}
-
 describe('AuthService', () => {
-  it('rota una sesión activa sin almacenar los tokens en claro', async () => {
-    const session = sesionActiva();
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const create = vi.fn().mockResolvedValue({ id: 'nueva-sesion' });
-    const prisma = {
-      sesionAutenticacion: {
-        findUnique: vi.fn().mockResolvedValue(session),
-        updateMany,
-        create,
-      },
-      eventoAuditoria: { create: vi.fn().mockResolvedValue({}) },
-    } as unknown as PrismaService;
-    const jwt = { signAsync: vi.fn().mockResolvedValue('access-token') };
-    const config = { getOrThrow: vi.fn().mockReturnValue(7) };
-    const service = new AuthService(prisma, jwt as never, config as never);
+  const prisma = {
+    usuario: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
+    sesionUsuario: {
+      create: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  };
+  let authService: AuthService;
 
-    const resultado = await service.refrescarSesion(
-      'refresh-prueba',
-      'csrf-prueba',
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    prisma.$transaction.mockImplementation(
+      (operation: (transaction: typeof prisma) => Promise<unknown>) =>
+        operation(prisma),
     );
 
-    expect(resultado.principal).toMatchObject({
-      id: session.usuarioId,
-      roles: ['ADMIN'],
-    });
-    expect(resultado.tokens.accessToken).toBe('access-token');
-    expect(resultado.tokens.refreshToken).not.toBe('refresh-prueba');
-    expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ rotadaEn: expect.any(Date) }) }),
-    );
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          tokenHash: expect.not.stringContaining('refresh-prueba'),
-          csrfTokenHash: expect.not.stringContaining('csrf-prueba'),
-        }),
-      }),
-    );
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: ConfigService,
+          useValue: {
+            getOrThrow: (key: string) =>
+              key === 'SESSION_TTL_SECONDS' ? 28_800 : undefined,
+          },
+        },
+      ],
+    }).compile();
+
+    authService = moduleRef.get(AuthService);
   });
 
-  it('revoca las sesiones activas cuando detecta reutilización de un refresh token', async () => {
-    const session = { ...sesionActiva(), rotadaEn: new Date() };
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
-      sesionAutenticacion: {
-        findUnique: vi.fn().mockResolvedValue(session),
-        updateMany,
-      },
-    } as unknown as PrismaService;
-    const service = new AuthService(
-      prisma,
-      { signAsync: vi.fn() } as never,
-      { getOrThrow: vi.fn() } as never,
+  it('creates a hashed, expiring session for an active verified user', async () => {
+    const password = 'correct horse battery staple';
+    const user = {
+      id: '497f6eca-6276-4993-bfeb-53cbbbba6f08',
+      email: 'requester@example.org',
+      passwordHash: await argon2.hash(password),
+      nombre: 'Requester',
+      estado: 'ACTIVO',
+      emailVerificadoEn: new Date(),
+      proveedorId: null,
+      roles: [{ rol: { codigo: 'SOLICITANTE' } }],
+    };
+    prisma.usuario.findUnique.mockResolvedValue(user);
+    prisma.usuario.update.mockResolvedValue(user);
+    prisma.sesionUsuario.create.mockImplementation(({ data }) =>
+      Promise.resolve({ id: 'session-id', ...data }),
     );
 
-    await expect(
-      service.refrescarSesion('refresh-reutilizado', 'csrf-prueba'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(updateMany).toHaveBeenCalledWith({
-      where: { usuarioId: session.usuarioId, revocadaEn: null },
-      data: { revocadaEn: expect.any(Date) },
+    const result = await authService.signIn(
+      ' REQUESTER@example.org ',
+      password,
+    );
+
+    expect(result.usuario).toEqual({
+      id: user.id,
+      email: user.email,
+      nombre: user.nombre,
+      roles: ['SOLICITANTE'],
     });
+    expect(result.sessionToken).toBeTruthy();
+    expect(result.csrfToken).toBeTruthy();
+    expect(prisma.usuario.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { email: 'requester@example.org' } }),
+    );
+
+    const createdSession = prisma.sesionUsuario.create.mock.calls[0][0].data;
+    expect(createdSession.tokenHash).toBe(
+      createHash('sha256').update(result.sessionToken).digest('hex'),
+    );
+    expect(createdSession.csrfTokenHash).toBe(
+      createHash('sha256').update(result.csrfToken).digest('hex'),
+    );
+    expect(createdSession.tokenHash).not.toBe(result.sessionToken);
+    expect(createdSession.venceEn.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('returns the same authentication error for an unknown email and a bad password', async () => {
+    prisma.usuario.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: '497f6eca-6276-4993-bfeb-53cbbbba6f08',
+        email: 'requester@example.org',
+        passwordHash: await argon2.hash('the correct password'),
+        estado: 'ACTIVO',
+        emailVerificadoEn: new Date(),
+        roles: [],
+      });
+
+    const unknownEmail = authService.signIn('missing@example.org', 'anything');
+    const wrongPassword = authService.signIn(
+      'requester@example.org',
+      'incorrect password',
+    );
+
+    await expect(unknownEmail).rejects.toThrow(UnauthorizedException);
+    await expect(wrongPassword).rejects.toThrow(UnauthorizedException);
+    await expect(unknownEmail).rejects.toThrow('Credenciales no válidas.');
+    await expect(wrongPassword).rejects.toThrow('Credenciales no válidas.');
+  });
+
+  it('does not create sessions for accounts without verified email or active status', async () => {
+    prisma.usuario.findUnique.mockResolvedValue({
+      id: '497f6eca-6276-4993-bfeb-53cbbbba6f08',
+      email: 'requester@example.org',
+      passwordHash: await argon2.hash('correct horse battery staple'),
+      estado: 'PENDIENTE_APROBACION',
+      emailVerificadoEn: new Date(),
+      roles: [{ rol: { codigo: 'SOLICITANTE' } }],
+    });
+
+    await expect(
+      authService.signIn(
+        'requester@example.org',
+        'correct horse battery staple',
+      ),
+    ).rejects.toThrow('Credenciales no válidas.');
+    expect(prisma.sesionUsuario.create).not.toHaveBeenCalled();
   });
 });

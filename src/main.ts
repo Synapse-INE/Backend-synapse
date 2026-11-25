@@ -1,10 +1,11 @@
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
+import type { Express } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
-import { ProblemDetailsFilter } from './common/http/problem-details.filter.js';
+import { ConfigService } from '@nestjs/config';
+import { isValidTrustedProxyCidr } from './infrastructure/security/trusted-proxy-cidr.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,13 +16,21 @@ async function bootstrap() {
     .split(',')
     .map((origin) => origin.trim());
 
-  if (config.getOrThrow<boolean>('CF_TRUSTED_PROXY')) {
-    app.getHttpAdapter().getInstance().set('trust proxy', 1);
-  }
-
   app.setGlobalPrefix('api/v1');
   app.enableCors({ origin: allowedOrigins, credentials: true });
   app.use(cookieParser());
+  const trustedProxyCidrs = config
+    .getOrThrow<string>('TRUSTED_PROXY_CIDRS')
+    .split(',')
+    .map((cidr) => cidr.trim())
+    .filter(Boolean);
+  if (trustedProxyCidrs.some((cidr) => !isValidTrustedProxyCidr(cidr))) {
+    throw new Error('TRUSTED_PROXY_CIDRS contiene un CIDR no válido.');
+  }
+  if (trustedProxyCidrs.length > 0) {
+    const expressApp = app.getHttpAdapter().getInstance() as Express;
+    expressApp.set('trust proxy', trustedProxyCidrs);
+  }
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -47,20 +56,8 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      exceptionFactory: (errors) =>
-        new BadRequestException({
-          code: 'VALIDACION_FALLIDA',
-          detail: 'Uno o más campos no cumplen el contrato.',
-          errors: errors.flatMap((error) =>
-            Object.values(error.constraints ?? {}).map((message) => ({
-              field: error.property,
-              message,
-            })),
-          ),
-        }),
     }),
   );
-  app.useGlobalFilters(new ProblemDetailsFilter());
 
   await app.listen(port, '0.0.0.0');
 }

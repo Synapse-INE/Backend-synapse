@@ -1,36 +1,38 @@
 # Estado del proyecto y siguientes pasos
 
-**Corte:** 23 de noviembre de 2026
+**Corte:** 24 de noviembre de 2026
 **Propósito:** compartir el alcance actual con frontend y coordinar el trabajo pendiente. La distribución se hace por carga y disponibilidad de créditos de IA, no por nombres ni por roles numerados.
 
 ## Resumen ejecutivo
 
-El backend ya tiene una base NestJS con PostgreSQL y Prisma, y un modelo de datos que considera el catálogo oficial del INE y los formularios S.00, S.11, S.21 y S.22. Aún no están implementados los servicios de negocio, los endpoints de solicitudes ni el importador del Excel. El frontend puede comenzar a diseñar sus formularios a partir de los objetos persistidos descritos abajo, mientras se acuerdan las reglas pendientes y el contrato HTTP.
+El backend ya tiene una base NestJS con PostgreSQL y Prisma, un modelo para el catálogo del INE y los formularios S.00, S.11, S.21 y S.22. Están implementados el inicio de sesión con sesiones opacas, el adaptador SMTP, los controles compartidos de rol y propiedad y un importador CLI del catálogo del INE. Aún faltan los flujos de registro, verificación de correo, invitaciones, revisión administrativa y los endpoints de solicitudes.
 
 ## Estado actual
 
 | Área | Estado |
 |---|---|
 | Estructura | NestJS, PostgreSQL, Prisma, endpoint de salud y configuración base listos. |
-| Seguridad base | Validación de solicitudes, Helmet, CORS con credenciales, límite general por IP, login con Argon2id, JWT en cookie HttpOnly, refresh rotativo, CSRF y guards de rol listos. Los controles por propietario siguen pendientes. |
-| Modelo de datos | 27 modelos persistidos para identidad, proveedores, importaciones, referencias INE y solicitudes multproducto. |
-| Migraciones | Esquema y migraciones preparados; aplicados en una prueba temporal compatible con PostgreSQL. |
-| Excel del INE | Perfilado realizado e importador CLI XLSX disponible; conserva staging, encabezados repetidos, filas originales, alias revisables y motivos de validación. |
+| Seguridad base | Validación de solicitudes, Helmet, CORS con credenciales, límites globales y de inicio de sesión, sesiones opacas en cookie HttpOnly y protección CSRF implementados. Guard de roles y helper de propiedad listos; aún no hay endpoints de negocio que los apliquen. |
+| Modelo de datos | Entidades persistidas para identidad, solicitantes, proveedores, importaciones, referencias INE y formularios multproducto. |
+| Cuentas de solicitantes | Institución, perfil y estado de aprobación incluidos en Prisma. Registro, verificación y aprobación por endpoints pendientes. |
+| Migraciones | La migración de identidad crea sesiones y perfiles y renombra `USUARIO` a `SOLICITANTE`. La prueba con PGlite no sustituye la aplicación y validación en PostgreSQL del entorno. |
+| Excel del INE | Importador CLI XLSX disponible; conserva encabezados y filas originales, modalidades repetidas, alias y observaciones. La carga de aceptación en PostgreSQL está pendiente. |
 | Formularios oficiales | Sus campos están representados en el modelo; faltan validaciones, flujos y endpoints. |
-| Frontend | Puede iniciar el diseño de formularios con el contrato de datos de este documento; no hay todavía API funcional de solicitudes. |
-| Publicación | El modelo y las migraciones están confirmados en la rama de trabajo y sincronizados con su remoto. La entrega de auth e importador INE se registra en [trazabilidad.md](./trazabilidad.md) (rama `feat/auth-importerExcel`). |
+| Contrato HTTP y seguridad | Salud, inicio/cierre de sesión, usuario actual y token CSRF documentados; los flujos de registro, solicitudes y demás operaciones siguen pendientes. |
+| Plan de identidad y acceso | Inicio de sesión, SMTP y controles comunes de rol/propiedad implementados. Registro, verificación, invitaciones, revisión administrativa y aplicación de políticas a endpoints siguen pendientes. |
+| Frontend | Puede iniciar el diseño de formularios con el contrato de datos de este documento; todavía no hay API funcional de solicitudes. |
+| Publicación | Verificar el estado del PR y confirmar que las migraciones y documentos vigentes estén incluidos antes de desplegar. |
 
-Verificaciones pasadas: Prisma format/validate/generate, pruebas unitarias, pruebas E2E, build, lint y una prueba de migraciones con PGlite. La prueba no sustituye una validación contra el PostgreSQL del entorno de despliegue. La configuración de Docker Compose valida, pero no se verificó un despliegue real.
+Tras integrar los cambios pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas), `npm run lint`, `npx prisma validate` y `git diff --check`. La ejecución de pruebas se limitó a un worker por la memoria disponible. La prueba de migración con PGlite verifica el cambio de rol y la conservación de datos; no sustituye una validación en PostgreSQL del entorno de despliegue. No se verificó un despliegue real.
 
 ## Entregas registradas en este corte
 
 ### Autenticación, autorización y protección de solicitudes
 
-- Se añadió `SesionAutenticacion` y la migración `20261124030000_auth_sessions`. Solo se almacenan hashes SHA-256 del refresh token y del token CSRF; un refresh rotado o reutilizado revoca las sesiones activas del usuario.
-- `POST /api/v1/auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` y `GET /auth/csrf` ya están disponibles. Las contraseñas se verifican con Argon2id, el access token dura 15 minutos y tanto access como refresh se entregan en cookies `HttpOnly`, `SameSite=Strict`.
-- Los endpoints son privados por defecto mediante guards globales. `GET /salud` y los pasos de inicio o renovación de sesión están marcados explícitamente como públicos. `@Autorizado(...)` compone la verificación de rol; el guard CSRF global protege toda operación insegura que no tenga una excepción explícita.
-- Todas las operaciones que cambien estado requieren el header configurado `AUTH_CSRF_HEADER_NAME` con el mismo valor que la cookie CSRF; la renovación comprueba además el hash vinculado a la sesión. Los errores HTTP siguen RFC 7807 con `code` estable.
-- Se añadió IP opcional a los eventos de auditoría y se auditan login, refresh y logout. El proxy solo se confía cuando `CF_TRUSTED_PROXY=true`; dicha variable debe habilitarse únicamente si el acceso directo al API está restringido.
+- Se mantiene `SesionUsuario` con la migración `20261124030000_identity_access_sessions`. La base de datos conserva hashes SHA-256 de los tokens de sesión y CSRF; la cookie de sesión es `HttpOnly`, revocable y tiene expiración configurable.
+- `POST /api/v1/auth/iniciar-sesion`, `GET /api/v1/auth/yo`, `GET /api/v1/auth/csrf` y `POST /api/v1/auth/cerrar-sesion` están disponibles. Las contraseñas se verifican con Argon2id y el error de credenciales es genérico.
+- Las rutas son privadas por defecto. Salud e inicio de sesión son explícitamente públicos; `AuthGuard` valida sesión y CSRF para solicitudes que modifican estado. El guard de roles y el helper de propiedad están listos para aplicarse a las operaciones de negocio.
+- La confianza en proxy se configura mediante `TRUSTED_PROXY_CIDRS` con CIDR validados; no se activa automáticamente.
 
 ### Importador del catálogo oficial INE
 
@@ -41,9 +43,8 @@ Verificaciones pasadas: Prisma format/validate/generate, pruebas unitarias, prue
 
 ### Verificación de esta entrega
 
-- Ejecutados correctamente: `prisma validate`, `npm run build`, `npm test` (7 pruebas), `npm run test:e2e` (2 pruebas), `npm run lint` y `git diff --check`.
-- La prueba del importador abre el XLSX oficial compartido y procesa sus 7,788 filas con un adaptador de persistencia simulado; se comprobaron las 12 columnas fuente y los dos encabezados `Modalidad`.
-- No se pudo aplicar la migración ni ejecutar el importador contra PostgreSQL real en esta estación: no hay servicio accesible en `localhost:5432` y Docker no está disponible. Antes de desplegar se debe ejecutar `npm run db:migrate:deploy` con las variables de `.env` reales y realizar una carga de aceptación.
+- La prueba del importador genera un XLSX temporal representativo y verifica las 12 columnas fuente, los dos encabezados `Modalidad` y el importe normalizado. No depende de archivos en rutas locales.
+- La carga real del catálogo en PostgreSQL no se ha ejecutado. Antes de desplegar se debe aplicar `npm run db:migrate:deploy` con variables de entorno reales y realizar una carga de aceptación.
 
 ## Hallazgos del catálogo del INE
 
@@ -60,27 +61,42 @@ La fila original se debe conservar completa durante la futura importación. No u
 ## Dónde consultar los objetos y atributos
 
 - [Modelo de datos y normalización](./modelo-datos.md): explicación funcional, atributos, datos faltantes, formularios y decisiones de normalización.
+- [Guía del MVP de Contrato Abierto](./guia-mvp-contrato-abierto.md): pantallas propuestas, flujo tipo ticket, entidades y rutas planificadas, distinguiendo lo existente de lo pendiente.
 - [Esquema Prisma](../prisma/schema.prisma): definición persistida de modelos, enums, tipos, nulabilidad y relaciones. Los nombres `camelCase` son la referencia inicial para el contrato JSON.
 - [Arquitectura de datos](../.github/modernize/assessment/engines/facts/data-architecture.md): relaciones entre entidades y límites actuales de persistencia.
+- [Contrato actual de API](../.github/modernize/assessment/engines/facts/api-service-contracts.md): servicios, endpoint disponible, comunicación y controles de seguridad existentes.
+- [Criterios de aceptación para APIs](./criterios-aceptacion-api.md): escenarios de seguridad y pruebas para los endpoints futuros; distingue lo configurado de lo pendiente.
+- [Especificación de identidad y acceso](../.github/modernize/identity-access/spec.md) y [plan de implementación](../.github/modernize/identity-access/plan.md): requisitos confirmados, tareas y bloqueos de despliegue.
 - [README del backend](../README.md): alcance implementado y pendientes de la API.
+- [Solicitud de apoyo para continuar el backend](./solicitud-apoyo-backend-carlos.md): tareas trazables y criterios de seguridad para la siguiente etapa.
 
 ### Contrato inicial para frontend
 
-| Objeto | Uso y campos principales |
-|---|---|
-| `SolicitudPrecio` | Cabecera: título, institución solicitante, modalidad, unidad ejecutora, fecha del formulario, enlace solicitante, autoridad que autoriza, descripción y estado. La modalidad es nullable para compatibilidad con solicitudes antiguas; debe exigirse en altas nuevas. |
-| `ProductoSolicitud` | Lista repetible por solicitud: número, nombre, código SIGES, especificaciones técnicas, unidad de medida y cantidad. La cantidad y otros datos pueden estar vacíos en borradores; validar los requeridos al enviar. |
-| `RequisitoSolicitud` | Atributos estructurados para análisis: nombre, valor, unidad, modo, fuente y estado de aprobación. No sustituye a la ficha del producto solicitado. |
-| `ProveedorSolicitud` | Empresa propuesta para una solicitud: nombre/razón social, NIT, dirección, teléfono y estado de confirmación del INE. |
-| `ProveedorSolicitudProducto` | Relación entre una empresa propuesta y los productos que comercializa; corresponde a la matriz del S.11. |
-| `ComisionImportacion` | Expediente de comisión de una solicitud de Bienes y Suministros Importados: estado y fecha de conformación. |
-| `RepresentanteSolicitante` | Titular o suplente: nombre, correo, teléfono y dirección para notificaciones. |
-| `CotizacionImportacion` | Datos de una cotización: proveedor extranjero, número, sitio web, contacto y fecha de consulta. |
-| `CotizacionProducto` | Detalle por producto cotizado: fabricante, país de origen, moneda, precio FOB total para la cantidad solicitada, flete, seguro y otros gastos. |
-| `JustificacionSolicitud` | Justificación por cotizaciones insuficientes o por no usar el catálogo SIGES, incluyendo motivo y autoridad responsable. |
-| `SolicitudAdjunto` | Metadatos de un archivo privado y tipo documental. Puede relacionarse con solicitud, producto, cotización o justificación. |
+| Objeto                            | Uso y campos principales                                                                                                                                                                                                                                              |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SolicitudPrecio`                 | Cabecera: título, institución solicitante, modalidad, unidad ejecutora, fecha del formulario, enlace solicitante, autoridad que autoriza, descripción y estado. La modalidad es nullable para compatibilidad con solicitudes antiguas; debe exigirse en altas nuevas. |
+| `Usuario` y `Rol`                 | Toda persona que complete o envíe un formulario debe tener cuenta. Se conservan los tres roles principales y se renombra el rol genérico `USUARIO` a `SOLICITANTE` para las personas externas.                                                                        |
+| `InstitucionSolicitante`          | Institución asociada a solicitantes: nombre oficial, NIT opcional y timestamps. Persistida en Prisma; no tiene endpoints.                                                                                                                                             |
+| `PerfilSolicitante`               | Usuario, institución, cargo y estado de revisión manual. El campo DPI/CUI es opcional; captura, cifrado, enmascaramiento y revisión no están implementados y su uso en producción sigue bloqueado por la política de privacidad.                                      |
+| `SesionUsuario`                   | Sesión del servidor con hash del token y del CSRF, vencimiento, revocación y usuario asociado. La API entrega el token de sesión en cookie HttpOnly.                                                                                                                  |
+| Endpoints de autenticación        | `POST /api/v1/auth/iniciar-sesion`, `GET /api/v1/auth/yo`, `GET /api/v1/auth/csrf` y `POST /api/v1/auth/cerrar-sesion`. No hay registro ni endpoints de solicitudes todavía.                                                                                          |
+| `ProductoSolicitud`               | Lista repetible por solicitud: número, nombre, código SIGES, especificaciones técnicas, unidad de medida y cantidad. La cantidad y otros datos pueden estar vacíos en borradores; validar los requeridos al enviar.                                                   |
+| `RequisitoSolicitud`              | Atributos estructurados para análisis: nombre, valor, unidad, modo, fuente y estado de aprobación. No sustituye a la ficha del producto solicitado.                                                                                                                   |
+| `ProveedorSolicitud`              | Empresa propuesta para una solicitud: nombre/razón social, NIT, dirección, teléfono y estado de confirmación del INE.                                                                                                                                                 |
+| `ProveedorSolicitudProducto`      | Relación entre una empresa propuesta y los productos que comercializa; corresponde a la matriz del S.11.                                                                                                                                                              |
+| `ComisionImportacion`             | Expediente de comisión de una solicitud de Bienes y Suministros Importados: estado y fecha de conformación.                                                                                                                                                           |
+| `RepresentanteSolicitante`        | Titular o suplente: nombre, correo, teléfono y dirección para notificaciones.                                                                                                                                                                                         |
+| `CotizacionImportacion`           | Datos de una cotización: proveedor extranjero, número, sitio web, contacto y fecha de consulta.                                                                                                                                                                       |
+| `CotizacionProducto`              | Detalle por producto cotizado: fabricante, país de origen, moneda, precio FOB total para la cantidad solicitada, flete, seguro y otros gastos.                                                                                                                        |
+| `JustificacionSolicitud`          | Justificación por cotizaciones insuficientes o por no usar el catálogo SIGES, incluyendo motivo y autoridad responsable.                                                                                                                                              |
+| `SolicitudAdjunto`                | Metadatos de un archivo privado y tipo documental. Puede relacionarse con solicitud, producto, cotización o justificación.                                                                                                                                            |
+| `RecepcionDocumental` (propuesta) | Método de entrega (`DIGITAL`, `FISICA`, `CD`), estado, fecha y usuario que registra la recepción. Permite mantener trazabilidad de entregas que el material vigente del INE aún exige en físico/CD. Todavía no existe en Prisma.                                      |
 
 Los importes y cantidades decimales deben viajar como cadenas en JSON para evitar pérdida de precisión en JavaScript. Las fechas tipo `date` deben representarse como `YYYY-MM-DD`; timestamps como ISO 8601. La API aún debe formalizar estos formatos. El diseño prevé guardar el binario en almacenamiento privado, servicio que sigue pendiente; PostgreSQL conserva únicamente su clave y metadatos.
+
+Para autenticarse desde navegador, el cliente debe enviar solicitudes con credenciales para conservar la cookie `ine_session`. El inicio de sesión devuelve el token CSRF en el cuerpo; `GET /api/v1/auth/csrf` puede emitir uno nuevo e invalida el anterior. Los métodos que modifican datos deben enviar el valor en `x-csrf-token`. El token de sesión no se devuelve en JSON.
+
+El alta de proveedores se realiza por invitación del INE. Las personas solicitantes pueden registrarse, verificar su correo y quedan pendientes de aprobación manual antes de enviar formularios. La captura de DPI/CUI no demuestra por sí sola la identidad: la verificación será manual, sin guardar una imagen del documento en la primera versión.
 
 ### Cómo se relacionan los formularios con el modelo
 
@@ -90,12 +106,23 @@ Los importes y cantidades decimales deben viajar como cadenas en JSON para evita
 - **Contrato Abierto:** la nota indica que la solicitud inicial se dirige por escrito a la DGAE. El portal puede conservar una copia, pero el esquema actual no modela el proceso de la DGAE como un flujo interno del INE.
 - **Entrega física:** los formatos indican entregar información digital editable e impresa; para bienes importados se menciona además CD. El portal no debe presentarse como sustituto de esa entrega.
 
-## Decisiones que hay que confirmar antes de cerrar formularios
+## Decisiones acordadas
 
-1. Si el mínimo de tres cotizaciones para bienes importados aplica al expediente completo o a cada producto. El esquema permite contar ambas cosas, pero no fuerza una regla no confirmada.
-2. Qué experiencia y documentación se requiere en el portal para Contrato Abierto, ya que el S.00 compartido enumera Subasta e Importados y la solicitud inicial de Contrato Abierto se dirige a la DGAE.
-3. Si el portal solo conservará la copia digital de entregas físicas o también registrará su fecha y estado de recepción.
-4. Qué estados y autorizaciones debe poder cambiar cada rol en cada etapa.
+- Los usuarios solicitantes deben autenticarse para completar o enviar formularios; el autor se conserva en `creadaPorId`.
+- Se conserva la matriz de tres roles principales y se renombra `USUARIO` a `SOLICITANTE` para cuentas externas vinculadas a una institución, preservando asignaciones existentes.
+- Los proveedores son invitados por el INE. Los solicitantes se registran, verifican correo y esperan revisión manual antes de enviar.
+- La primera versión registra solo el número DPI/CUI, sin imagen, con revisión manual. El acceso al número completo debe restringirse, cifrarse y enmascararse.
+- El portal gestiona solicitudes de precio de referencia para Contrato Abierto, no el proceso de adquisiciones que corresponde a la DGAE.
+- Se contempla registrar método, fecha y estado de recepción física/CD mientras esos requisitos sigan vigentes.
+- El número mínimo de cotizaciones se mantiene configurable y sin una restricción fija en base de datos hasta confirmar la regla con el INE.
+
+## Decisiones pendientes antes de cerrar formularios
+
+1. Confirmar con el INE si el mínimo de tres cotizaciones para bienes importados aplica al expediente completo o a cada producto. El esquema debe seguir permitiendo ambas opciones.
+2. Confirmar con el INE si aceptará oficialmente entrega digital; hasta entonces no retirar la recepción física/CD.
+3. Definir aviso de privacidad, finalidad, retención y eliminación del DPI/CUI antes de recolectarlo en producción.
+4. Confirmar correo institucional/SMTP para verificación e invitaciones, límites de carga de archivos y dominios de frontend/API para configurar cookies y CORS en despliegue.
+5. Formalizar estados y transiciones de cada trámite con el personal del INE.
 
 La resolución metodológica PDF compartida solo permitió extraer texto de manera limitada; las reglas estadísticas y de redondeo deben revisarse manualmente antes de implementar medias, medianas o informes.
 
@@ -103,15 +130,17 @@ La resolución metodológica PDF compartida solo permitió extraer texto de mane
 
 | Orden | Trabajo | Resultado esperado |
 |---|---|---|
-| 1 | Compartir este documento y el modelo de datos con frontend; acordar campos, enum, nulabilidad y formatos JSON. | Formularios alineados con las entidades persistidas, sin asumir endpoints inexistentes. |
-| 2 | Resolver las cuatro decisiones anteriores con el equipo y, cuando corresponda, con el INE. | Reglas de envío y estados claros antes de codificar validaciones. |
-| 3 | Completar registro, verificación de correo, invitaciones y autorización por propietario sobre la base de auth/guards ya implementada. | Acceso seguro completo para los demás flujos. |
-| 4 | Exponer y operar el importador del catálogo INE ya implementado por CLI, si se confirma una carga HTTP segura. | Importación validable, reintentable y sin deduplicación por NOG. |
-| 5 | Implementar solicitudes, productos, adjuntos privados y auditoría de cambios. | Flujo S.00 con validación de borrador/envío y acceso controlado. |
-| 6 | Implementar la matriz S.11 y confirmación de empresas por producto. | Propuesta de proveedores trazable y revisable por personal autorizado. |
-| 7 | Implementar el expediente de comisión y captura de cotizaciones S.21/S.22. | Representantes, documentos, cotizaciones y componentes de costo por producto. |
-| 8 | Validar estadísticas, búsqueda externa, IA e informes como fases posteriores. | Resultados comparables y auditables; no mezclar cotizaciones ni fuentes sin validación. |
-| 9 | Revisar seguridad, pruebas integrales, despliegue y documentación de operación. | PR revisado y versión lista para desplegar. |
+| 1 | Aplicar y verificar la migración de identidad en PostgreSQL; configurar y probar los CIDR de proxy del despliegue. | Esquema actualizado y obtención verificable de la IP cliente antes de tráfico real. |
+| 2 | Compartir el modelo de datos y el contrato de autenticación con frontend; acordar campos, enums, nulabilidad y formatos JSON. | Integración de los formularios y del inicio/cierre de sesión sin asumir endpoints inexistentes. |
+| 3 | Confirmar con el INE las decisiones abiertas sobre cotizaciones, entrega física, privacidad, correo y dominios. | Reglas y configuración claras antes de codificar flujos dependientes. |
+| 4 | Implementar registro de solicitantes, verificación de correo e invitaciones de proveedores usando SMTP y tokens de un solo uso. | Onboarding institucional con estados, límites y consumo atómico de tokens. |
+| 5 | Implementar revisión administrativa y auditoría; aplicar rol y propiedad a cada endpoint y mantener DPI/CUI bloqueado hasta aprobar privacidad. | Acceso seguro y trazable para los flujos de negocio. |
+| 6 | Aplicar el importador CLI en un entorno PostgreSQL de aceptación y revisar alias y filas con observaciones. | Carga verificable, reintentable y sin deduplicación por NOG. No exponer carga HTTP sin controles y almacenamiento privado. |
+| 7 | Implementar solicitudes, productos y adjuntos privados. | Flujo S.00 con validación de borrador/envío y acceso controlado. |
+| 8 | Implementar la matriz S.11 y confirmación de empresas por producto. | Propuesta de proveedores trazable y revisable por personal autorizado. |
+| 9 | Implementar el expediente de comisión y captura de cotizaciones S.21/S.22. | Representantes, documentos, cotizaciones y componentes de costo por producto. |
+| 10 | Validar estadísticas, búsqueda externa, IA e informes como fases posteriores. | Resultados comparables y auditables; no mezclar cotizaciones ni fuentes sin validación. |
+| 11 | Revisar seguridad, pruebas integrales, despliegue y documentación de operación. | PR revisado y versión lista para desplegar. |
 
 ## Reparto por disponibilidad de créditos de IA
 

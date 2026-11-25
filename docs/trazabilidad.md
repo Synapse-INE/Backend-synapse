@@ -1,28 +1,24 @@
 # Trazabilidad de entregas
 
-Registro de lo trabajado, su ubicación en el código y su estado de verificación.
+Registro de las funcionalidades integradas, su ubicación y las validaciones pendientes.
 
-## 2026-11-23 — Auth, guards e importador del Excel INE
-
-**Rama:** `feat/auth-importerExcel`
+## Sesiones, autorización e importador del catálogo INE
 
 | Requerimiento | Implementación | Ubicación |
 |---|---|---|
-| Autenticación con JWT en cookie HttpOnly | Login, refresh, logout, `me` y `csrf` | `src/modules/auth/auth.controller.ts`, `auth.service.ts` |
-| Hash de contraseñas | Argon2id | `src/modules/auth/auth.service.ts` |
-| Refresh rotativo con detección de reutilización | Hash SHA-256 del token; la reutilización revoca las sesiones del usuario | `auth.service.ts`, modelo `SesionAutenticacion` |
-| Autorización global por defecto | Guards JWT, CSRF y roles; `@Public`, `@SkipCsrf`, `@Autorizado` | `src/modules/auth/guards`, `decorators` |
-| Auditoría con IP | Campo IP en eventos; login, refresh y logout auditados | `prisma/migrations/20261124030000_auth_sessions` |
-| Errores RFC 7807 | Filtro global | `src/common/http/problem-details.filter.ts` |
-| Variables de auth | Claves añadidas a `.env.example` | `.env.example` |
-| Importador del catálogo INE | CLI `npm run import:ine -- --archivo <ruta.xlsx>`, staging, hash idempotente, validaciones | `src/modules/referencias-ine/`, `src/scripts/importar-referencias-ine.ts` |
-| Normalización | Alias, fechas, `DECIMAL(14,3)`, las dos columnas `Modalidad` conservadas | `normalizador-ine.ts` |
+| Autenticación de navegador | Inicio/cierre de sesión, sesión opaca en cookie HttpOnly y consulta del usuario autenticado | `src/modules/auth/`, `src/common/auth/` |
+| Protección de credenciales | Verificación de contraseñas con Argon2id y respuesta genérica ante credenciales no válidas | `src/modules/auth/auth.service.ts` |
+| Sesiones y CSRF | Persistencia de hashes, expiración y revocación; renovación del token CSRF | `prisma/schema.prisma`, `prisma/migrations/20261124030000_identity_access_sessions/` |
+| Autorización | Guard de sesión, guard de roles y helper de propiedad con denegación por defecto | `src/modules/auth/auth.guard.ts`, `src/common/auth/` |
+| Importación INE | Comando CLI, validación de extensión, firma y tamaño, hash idempotente y lotes de staging | `src/scripts/importar-referencias-ine.ts`, `src/modules/referencias-ine/` |
+| Normalización de datos | Conservación de filas originales, modalidades repetidas, alias y campos normalizados | `src/modules/referencias-ine/normalizador-ine.ts` |
 
 ### Verificación
-- `npm run build`, `npm test` (7 pruebas), `npm run lint` y `git diff --check` pasan. Antes de esta entrega también se ejecutaron `npm run test:e2e` (2 pruebas) y `prisma validate`.
-- El importador procesó las 7,788 filas del libro oficial con un adaptador de persistencia simulado.
+
+Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas), `npm run lint`, `npx prisma validate` y `git diff --check`. La prueba del importador genera un libro XLSX temporal y comprueba la conservación de las doce columnas fuente, incluidos los dos encabezados `Modalidad`; el fixture no depende de archivos en rutas locales.
 
 ### Pendiente
-- Aplicar la migración e importar contra un PostgreSQL real (`npm run db:migrate:deploy`); no se pudo probar sin Docker/PostgreSQL.
-- `npm audit`: 2 vulnerabilidades moderadas transitivas (`exceljs` → `uuid`). La corrección automática implica un downgrade incompatible y no se aplicó.
-- Autorización por propietario, registro, verificación de correo e invitaciones.
+
+- Ejecutar la migración y el importador en un PostgreSQL de aceptación; el entorno de desarrollo no se considera validación de despliegue.
+- Completar registro, verificación de correo, invitaciones, revisión administrativa y endpoints de solicitudes.
+- Aplicar controles de rol y propiedad en cada operación de negocio y cubrirlos con pruebas de integración.

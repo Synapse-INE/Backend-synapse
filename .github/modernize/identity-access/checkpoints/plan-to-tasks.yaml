@@ -1,0 +1,168 @@
+metadata:
+  generated: "2026-11-23"
+  source_plan: ".github/modernize/identity-access/plan.md"
+  target_tasks: ".github/modernize/identity-access/plan.md#implementation-steps"
+
+summary:
+  total_plan_items: 9
+  covered_plan_items: 9
+  missing_plan_items: 0
+  coverage_percentage: 100.0
+  total_tasks_generated: 24
+  orphan_tasks: 0
+
+phases:
+  - phase_id: "Phase-1"
+    phase_name: "Setup and foundational persistence/configuration"
+    items:
+      - item_id: "1.1"
+        description: "Extend identity persistence and configuration."
+        tasks:
+          - task_id: "T001"
+            description: "Document environment and security configuration."
+          - task_id: "T002"
+            description: "Add applicant and session schema."
+          - task_id: "T003"
+            description: "Rename the generic role safely."
+          - task_id: "T004"
+            description: "Validate schema and migration."
+          - task_id: "T005"
+            description: "Add validated security environment settings."
+        notes: "Migration and configuration are foundational."
+      - item_id: "1.2"
+        description: "Add shared authentication and security controls."
+        tasks:
+          - task_id: "T006"
+            description: "Add configurable SMTP transport."
+          - task_id: "T007"
+            description: "Add shared authentication and authorization helpers."
+          - task_id: "T008"
+            description: "Add security configuration tests."
+        notes: "All business routes depend on these shared controls."
+  - phase_id: "Phase-2"
+    phase_name: "Foundational security"
+    items:
+      - item_id: "2.1"
+        description: "Implement authentication and session services."
+        tasks:
+          - task_id: "T009"
+            description: "Implement Argon2id credentials."
+          - task_id: "T010"
+            description: "Implement opaque server-side sessions."
+        notes: "Tests cover credentials, revocation, and redaction."
+      - item_id: "2.2"
+        description: "Add shared authentication and security controls."
+        tasks:
+          - task_id: "T007"
+            description: "Add authenticated-user context and access helpers."
+          - task_id: "T008"
+            description: "Test cookie, CSRF, proxy, and throttling behavior."
+        notes: "Health remains public and minimal."
+  - phase_id: "Phase-3"
+    phase_name: "User Story 1 - Secure sign-in"
+    items:
+      - item_id: "3.1"
+        description: "Deliver secure sign-in and session lifecycle."
+        tasks:
+          - task_id: "T011"
+            description: "Implement CSRF token lifecycle."
+          - task_id: "T012"
+            description: "Add auth endpoints and DTOs."
+          - task_id: "T013"
+            description: "Test authentication and session lifecycle."
+        notes: "Independent user story after foundational security."
+  - phase_id: "Phase-4"
+    phase_name: "User Story 2 - External onboarding"
+    items:
+      - item_id: "4.1"
+        description: "Implement requester registration and email verification."
+        tasks:
+          - task_id: "T014"
+            description: "Implement requester registration."
+          - task_id: "T015"
+            description: "Implement email verification delivery."
+          - task_id: "T016"
+            description: "Implement privacy-gated encrypted identity profile."
+          - task_id: "T018"
+            description: "Test requester onboarding and failure cases."
+        notes: "Production identity capture is disabled until institutional approval."
+      - item_id: "4.2"
+        description: "Implement provider invitations and acceptance."
+        tasks:
+          - task_id: "T017"
+            description: "Implement provider invitation lifecycle."
+          - task_id: "T018"
+            description: "Test invitation acceptance, expiry, and replay."
+        notes: "Invitation role and provider ownership are server-assigned."
+  - phase_id: "Phase-5"
+    phase_name: "User Story 3 - Review and authorization"
+    items:
+      - item_id: "5.1"
+        description: "Implement administrator review, roles, and audit."
+        tasks:
+          - task_id: "T019"
+            description: "Implement admin-only review and role endpoints."
+          - task_id: "T020"
+            description: "Record security-relevant audit events."
+          - task_id: "T021"
+            description: "Add safe initial administrator bootstrap."
+          - task_id: "T022"
+            description: "Test cross-role and cross-owner denials."
+        notes: "External users cannot assign roles or approve profiles."
+  - phase_id: "Phase-6"
+    phase_name: "Polish"
+    items:
+      - item_id: "6.1"
+        description: "Verify API contracts and operational readiness."
+        tasks:
+          - task_id: "T023"
+            description: "Update current API inventory and operational docs."
+          - task_id: "T024"
+            description: "Run validation suites and runtime route probes."
+        notes: "Release remains gated on email, domain, proxy, and privacy configuration."
+
+missing_plan_items: []
+orphan_tasks: []
+upstream_trace:
+  - plan_item: "1.1"
+    source_requirements: ["REQ-003", "REQ-006", "REQ-009", "REQ-010", "REQ-011", "REQ-013"]
+    tasks: ["T001", "T002", "T003", "T004", "T005"]
+    full_trace: "REQ-003,REQ-006,REQ-009,REQ-010,REQ-011,REQ-013 → Phase-1.1 → T001-T005"
+  - plan_item: "1.2"
+    source_requirements: ["REQ-007", "REQ-012", "REQ-014", "REQ-015", "REQ-016"]
+    tasks: ["T005", "T006", "T007", "T008"]
+    full_trace: "REQ-007,REQ-012,REQ-014,REQ-015,REQ-016 → Phase-1.2 → T005-T008"
+  - plan_item: "2.1"
+    source_requirements: ["REQ-005", "REQ-006", "REQ-013"]
+    tasks: ["T009", "T010"]
+    full_trace: "REQ-005,REQ-006,REQ-013 → Phase-2.1 → T009,T010"
+  - plan_item: "2.2"
+    source_requirements: ["REQ-001", "REQ-007", "REQ-008", "REQ-015", "REQ-016", "REQ-018"]
+    tasks: ["T007", "T008"]
+    full_trace: "REQ-001,REQ-007,REQ-008,REQ-015,REQ-016,REQ-018 → Phase-2.2 → T007,T008"
+  - plan_item: "3.1"
+    source_requirements: ["REQ-005", "REQ-006", "REQ-007", "REQ-016", "REQ-018"]
+    tasks: ["T009", "T010", "T011", "T012", "T013"]
+    full_trace: "REQ-005,REQ-006,REQ-007,REQ-016,REQ-018 → Phase-3.1 → T009-T013"
+  - plan_item: "4.1"
+    source_requirements: ["REQ-001", "REQ-002", "REQ-003", "REQ-009", "REQ-011", "REQ-012", "REQ-013", "REQ-014", "REQ-016"]
+    tasks: ["T014", "T015", "T016", "T018"]
+    full_trace: "REQ-001,REQ-002,REQ-003,REQ-009,REQ-011,REQ-012,REQ-013,REQ-014,REQ-016 → Phase-4.1 → T014-T016,T018"
+  - plan_item: "4.2"
+    source_requirements: ["REQ-004", "REQ-013", "REQ-014", "REQ-016"]
+    tasks: ["T017", "T018"]
+    full_trace: "REQ-004,REQ-013,REQ-014,REQ-016 → Phase-4.2 → T017,T018"
+  - plan_item: "5.1"
+    source_requirements: ["REQ-003", "REQ-008", "REQ-009", "REQ-010", "REQ-017"]
+    tasks: ["T019", "T020", "T021", "T022"]
+    full_trace: "REQ-003,REQ-008,REQ-009,REQ-010,REQ-017 → Phase-5.1 → T019-T022"
+  - plan_item: "6.1"
+    source_requirements: ["REQ-001", "REQ-002", "REQ-003", "REQ-004", "REQ-005", "REQ-006", "REQ-007", "REQ-008", "REQ-009", "REQ-010", "REQ-011", "REQ-012", "REQ-013", "REQ-014", "REQ-015", "REQ-016", "REQ-017", "REQ-018"]
+    tasks: ["T023", "T024"]
+    full_trace: "REQ-001 through REQ-018 → Phase-6.1 → T023,T024"
+
+validation:
+  passed: true
+  errors: []
+  warnings:
+    - "T016 and production enablement depend on approved DPI/CUI privacy and retention policy."

@@ -1,0 +1,186 @@
+metadata:
+  generated: "2026-11-23"
+  source_spec: ".github/modernize/identity-access/spec.md"
+  target_plan: ".github/modernize/identity-access/plan.md"
+
+summary:
+  total_requirements: 18
+  covered_requirements: 18
+  missing_requirements: 0
+  coverage_percentage: 100.0
+
+requirements:
+  - req_id: "REQ-001"
+    req_description: "Require authenticated, attributable users for future form writes."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-2"
+      phase_name: "Foundational"
+      items:
+        - item_id: "2.2"
+          description: "Add shared authentication and security controls."
+    notes: "Also covered by sign-in and administrator authorization."
+  - req_id: "REQ-002"
+    req_description: "Allow requester self-registration with institutional association."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-4"
+      phase_name: "Requester registration"
+      items:
+        - item_id: "4.1"
+          description: "Deliver requester registration and provider invitations."
+  - req_id: "REQ-003"
+    req_description: "Require email verification and administrator approval."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-5"
+      phase_name: "Administrator review"
+      items:
+        - item_id: "5.1"
+          description: "Deliver administrator review and authorization."
+    notes: "Email verification is implemented in Phase-4.1."
+  - req_id: "REQ-004"
+    req_description: "Restrict provider account creation to invitations."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-4"
+      phase_name: "Requester registration"
+      items:
+        - item_id: "4.2"
+          description: "Deliver provider invitations and acceptance."
+  - req_id: "REQ-005"
+    req_description: "Authenticate eligible users with generic errors."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-3"
+      phase_name: "Secure sign-in"
+      items:
+        - item_id: "3.1"
+          description: "Deliver secure sign-in and session lifecycle."
+  - req_id: "REQ-006"
+    req_description: "Create revocable, expiring server-side sessions."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-3"
+      phase_name: "Secure sign-in"
+      items:
+        - item_id: "3.1"
+          description: "Deliver secure sign-in and session lifecycle."
+  - req_id: "REQ-007"
+    req_description: "Protect browser sessions with cookies and CSRF."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-3"
+      phase_name: "Secure sign-in"
+      items:
+        - item_id: "3.1"
+          description: "Deliver secure sign-in and session lifecycle."
+  - req_id: "REQ-008"
+    req_description: "Enforce role and resource ownership."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-5"
+      phase_name: "Administrator review"
+      items:
+        - item_id: "5.1"
+          description: "Deliver administrator review and authorization."
+  - req_id: "REQ-009"
+    req_description: "Rename USUARIO to SOLICITANTE safely."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-1"
+      phase_name: "Setup and foundational persistence/configuration"
+      items:
+        - item_id: "1.1"
+          description: "Extend identity persistence and configuration."
+  - req_id: "REQ-010"
+    req_description: "Support manual identity review and audit it."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-5"
+      phase_name: "Administrator review"
+      items:
+        - item_id: "5.1"
+          description: "Deliver administrator review and authorization."
+  - req_id: "REQ-011"
+    req_description: "Encrypt and mask DPI/CUI without storing an image."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-4"
+      phase_name: "Requester registration"
+      items:
+        - item_id: "4.1"
+          description: "Deliver requester registration and provider invitations."
+  - req_id: "REQ-012"
+    req_description: "Gate production DPI/CUI capture on institutional approval."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-1"
+      phase_name: "Setup and foundational persistence/configuration"
+      items:
+        - item_id: "1.2"
+          description: "Add shared authentication and security controls."
+  - req_id: "REQ-013"
+    req_description: "Hash and expire security tokens."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-1"
+      phase_name: "Setup and foundational persistence/configuration"
+      items:
+        - item_id: "1.1"
+          description: "Extend identity persistence and configuration."
+    notes: "Verification, invitation, and session operations are implemented in later stories."
+  - req_id: "REQ-014"
+    req_description: "Send email through configurable SMTP."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-4"
+      phase_name: "Requester registration"
+      items:
+        - item_id: "4.1"
+          description: "Deliver requester registration and provider invitations."
+  - req_id: "REQ-015"
+    req_description: "Configure cookie, CORS, and trusted proxies per environment."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-1"
+      phase_name: "Setup and foundational persistence/configuration"
+      items:
+        - item_id: "1.2"
+          description: "Add shared authentication and security controls."
+  - req_id: "REQ-016"
+    req_description: "Rate-limit sensitive operations."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-2"
+      phase_name: "Foundational"
+      items:
+        - item_id: "2.2"
+          description: "Add shared authentication and security controls."
+  - req_id: "REQ-017"
+    req_description: "Audit access-control lifecycle without secrets."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-5"
+      phase_name: "Administrator review"
+      items:
+        - item_id: "5.1"
+          description: "Deliver administrator review and authorization."
+  - req_id: "REQ-018"
+    req_description: "Preserve the minimal public health endpoint."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-6"
+      phase_name: "Polish"
+      items:
+        - item_id: "6.1"
+          description: "Verify contracts and operational readiness."
+
+missing_requirements: []
+orphan_plan_items: []
+
+validation:
+  passed: true
+  errors: []
+  warnings:
+    - "DPI/CUI production capture remains gated on INE privacy and retention approval."
