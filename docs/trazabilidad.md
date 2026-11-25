@@ -40,3 +40,15 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - Se auditan `INICIO_SESION`, `INICIO_SESION_FALLIDO` (sin guardar el correo en claro: solo su hash SHA-256) y `CIERRE_SESION`, con la IP efectiva (`request.ip`, que respeta `TRUSTED_PROXY_CIDRS`). La auditoría del éxito se escribe en la misma transacción que la sesión; la de fallos y cierres es de mejor esfuerzo y no impide la respuesta.
 - `ProblemDetailsFilter` global (`APP_FILTER`): respuestas `application/problem+json` con `code` estable (`NO_AUTENTICADO`, `SIN_PERMISO`, `NO_ENCONTRADO`, `CONFLICTO`, `LIMITE_EXCEDIDO`, `SOLICITUD_INVALIDA`). Los errores de validación devuelven `VALIDACION_FALLIDA` con `errors[{field, message}]`.
 - `test/identity-migration.spec.ts` ya no asume que la migración de identidad es la última.
+
+## 2026-11-24 — Registro, verificación de correo, invitaciones y revisión de solicitantes
+
+**Rama:** `feat/registro-verificacion-invitaciones` (incluye la rama `feat/auth-auditoria-rfc7807`, de la que depende para registrar la IP)
+
+- Nuevos módulos `registro`, `invitaciones` y `solicitantes`, y `AuditoriaService` compartido (`registrarEn` transaccional y `registrar` de mejor esfuerzo).
+- Registro sin enumeración de cuentas: misma respuesta 202 para correos nuevos, existentes o en carrera; el hash Argon2 se calcula siempre.
+- Tokens de verificación e invitación de un solo uso, solo hash en base de datos, consumo atómico (`updateMany` con `consumidoEn/aceptadaEn = null` y vigencia). El token nunca se devuelve ni se registra; si falla el SMTP la cuenta se conserva y la invitación devuelve `correoEnviado: false`.
+- Un solicitante necesita correo verificado y aprobación de un `ADMIN` para iniciar sesión; el proveedor solo existe vía invitación.
+- Nuevas variables: `FRONTEND_URL`, `EMAIL_TOKEN_TTL_HOURS`, `INVITATION_TTL_HOURS`, `REGISTRO_DOMINIOS_PERMITIDOS`.
+- Verificación: 66 pruebas unitarias y e2e, y una prueba de humo contra PostgreSQL real (registro, verificación, aprobación con y sin CSRF, rol no autorizado, invitación y reutilización) con auditoría con IP.
+- Pendiente: pantalla de administración, límites por cuenta, rotación de invitaciones desde la UI, y confirmar con el INE los dominios permitidos.
