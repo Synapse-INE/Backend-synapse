@@ -5,7 +5,7 @@
 
 ## Resumen ejecutivo
 
-El backend (NestJS, PostgreSQL y Prisma) ya cubre el acceso completo y el primer formulario oficial: inicio de sesión con sesiones opacas y CSRF, registro de solicitantes con verificación de correo y aprobación manual, invitaciones de proveedores, auditoría con IP, errores RFC 7807, solicitudes S.00 con borrador, envío validado y estados, y el importador CLI del catálogo INE validado contra PostgreSQL. Se suman recuperación y cambio de contraseña, primer administrador por comando, administración de usuarios y roles, consulta filtrada de la auditoría, el ciclo del expediente (adjuntos, informes, entregas), los formularios de requisitos, S.11 y S.21/S.22, y la carga y revisión del catálogo INE por HTTP. Las 93 operaciones están descritas en OpenAPI para que el frontend, que se desarrolla por separado, trabaje contra un contrato verificable. Lo que falta para dar el backend por terminado está priorizado en [backlog-backend.md](./backlog-backend.md).
+El backend (NestJS, PostgreSQL y Prisma) ya cubre el acceso completo y el primer formulario oficial: inicio de sesión con sesiones opacas y CSRF, registro de solicitantes con verificación de correo y aprobación manual, invitaciones de proveedores, auditoría con IP, errores RFC 7807, solicitudes S.00 con borrador, envío validado y estados, y el importador CLI del catálogo INE validado contra PostgreSQL. Se suman recuperación y cambio de contraseña, primer administrador por comando, administración de usuarios y roles, consulta filtrada de la auditoría, el ciclo del expediente (adjuntos, informes, entregas), los formularios de requisitos, S.11 y S.21/S.22, y la carga y revisión del catálogo INE por HTTP. Las 96 operaciones están descritas en OpenAPI para que el frontend, que se desarrolla por separado, trabaje contra un contrato verificable. Lo que falta para dar el backend por terminado está priorizado en [backlog-backend.md](./backlog-backend.md).
 
 ## Estado actual
 
@@ -19,11 +19,11 @@ El backend (NestJS, PostgreSQL y Prisma) ya cubre el acceso completo y el primer
 | Formularios S.11, S.21 y S.22 | Requisitos, empresas propuestas, comisión, cotizaciones de importación y justificaciones, con las reglas de mínimo al enviar. El mínimo de tres por producto es una decisión asumida del INE. |
 | Excel del INE | Importador CLI y reprocesado validados contra PostgreSQL: 7,788 filas, 7,783 normalizadas y 5 en revisión por precio `Sin Dato`. Carga, revisión de filas y alias, y reprocesado disponibles por HTTP (`ADMIN`). |
 | Migraciones | Aplicadas y verificadas en PostgreSQL 16 local, sin deriva contra el esquema. Falta validarlas en el entorno de despliegue. |
-| Contrato HTTP | OpenAPI con las 93 operaciones, esquemas de entrada, errores y seguridad; una prueba e2e impide documentación desactualizada. |
+| Contrato HTTP | OpenAPI con las 96 operaciones, esquemas de entrada, errores y seguridad; una prueba e2e impide documentación desactualizada. |
 | Frontend | Desarrollo independiente; consume `/api/v1/openapi.json` (con `SWAGGER_ENABLED=true`). |
 | Operación | CI en cada PR, readiness `/salud/listo`, `x-request-id` y registro por petición, imagen sin privilegios con `HEALTHCHECK`. Falta, en GitHub, dejar `develop` como rama por defecto y proteger `main`. |
 
-Verificación vigente: `npm run build`, `npm run lint`, `npm test` (144 pruebas), `npm run test:e2e` (119 pruebas), `npx prisma validate` y `prisma migrate diff` sin deriva. El registro, la revisión, las invitaciones y las solicitudes se probaron además de extremo a extremo contra PostgreSQL real. El envío de correo con un SMTP real no se ha probado.
+Verificación vigente: `npm run build`, `npm run lint`, `npm test` (144 pruebas), `npm run test:e2e` (128 pruebas), `npx prisma validate` y `prisma migrate diff` sin deriva. El registro, la revisión, las invitaciones y las solicitudes se probaron además de extremo a extremo contra PostgreSQL real. El envío de correo con un SMTP real no se ha probado.
 
 ## Entregas registradas en este corte
 
