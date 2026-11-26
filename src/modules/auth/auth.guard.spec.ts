@@ -118,6 +118,7 @@ describe('AuthGuard', () => {
           id: user.id,
           email: user.email,
           roles: ['SOLICITANTE'],
+          proveedorId: null,
         },
         ownership: {
           usuarioId: user.id,

@@ -23,11 +23,17 @@ const personal = {
   usuario: { ...solicitante.usuario, id: 'w1', roles: ['TRABAJADOR_INE'] },
   ownership: { usuarioId: 'w1', proveedorId: null, institucionId: null },
 };
+const jefe = {
+  ...personal,
+  usuario: { ...personal.usuario, id: 'j1', roles: ['JEFE'] },
+  ownership: { usuarioId: 'j1', proveedorId: null, institucionId: null },
+};
 
 const completa = {
   id: 'sol-1',
   estado: 'BORRADOR',
   creadaPorId: 'u1',
+  asignadaAId: 'w1',
   modalidad: 'CONTRATO_ABIERTO',
   unidadEjecutora: 'Unidad',
   fechaFormulario: new Date('2026-11-24'),
@@ -55,6 +61,12 @@ describe('SolicitudesService', () => {
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      delete: vi.fn(),
+    },
+    solicitudColaborador: {
+      count: vi.fn().mockResolvedValue(0),
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
     },
     productoSolicitud: { deleteMany: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
     solicitudHistorial: { create: vi.fn() },
@@ -63,6 +75,7 @@ describe('SolicitudesService', () => {
     precioConsultado: {
       count: vi.fn().mockResolvedValue(0),
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn(),
     },
     validacionAnalisis: {
@@ -90,12 +103,16 @@ describe('SolicitudesService', () => {
     $transaction: vi.fn(),
   };
   const auditoria = { registrarEn: vi.fn() };
-  const notificaciones = { avisar: vi.fn() };
+  const notificaciones = {
+    avisar: vi.fn(),
+    avisarJefesNuevaRecepcion: vi.fn(),
+  };
   let servicio: SolicitudesService;
 
   beforeEach(() => {
     vi.clearAllMocks();
     tx.precioConsultado.count.mockResolvedValue(0);
+    tx.precioConsultado.findMany.mockResolvedValue([]);
     tx.validacionAnalisis.count.mockResolvedValue(0);
     prisma.$transaction.mockImplementation(
       (operacion: (cliente: typeof tx) => Promise<unknown>) => operacion(tx),
@@ -251,6 +268,10 @@ describe('SolicitudesService', () => {
       tx,
       expect.objectContaining({ accion: 'SOLICITUD_ENVIADA' }),
     );
+    expect(notificaciones.avisarJefesNuevaRecepcion).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ solicitudId: 'sol-1', actorId: 'u1' }),
+    );
   });
 
   it('un doble envío simultáneo no duplica la recepción', async () => {
@@ -262,7 +283,7 @@ describe('SolicitudesService', () => {
   });
 
   it('el personal avanza el estado por una transición válida y deja el motivo', async () => {
-    tx.solicitudPrecio.findUnique.mockResolvedValue({ estado: 'RECIBIDA' });
+    tx.solicitudPrecio.findUnique.mockResolvedValue({ id: 'sol-1', estado: 'RECIBIDA', asignadaAId: 'w1' });
     tx.solicitudPrecio.updateMany.mockResolvedValue({ count: 1 });
     tx.solicitudPrecio.findUniqueOrThrow.mockResolvedValue({ id: 'sol-1' });
 
@@ -277,13 +298,34 @@ describe('SolicitudesService', () => {
     );
   });
 
+  it('con responsable, otra persona del INE no avanza el expediente', async () => {
+    tx.solicitudPrecio.findUnique.mockResolvedValue({
+      id: 'sol-1',
+      estado: 'RECIBIDA',
+      asignadaAId: 'analista',
+    });
+    tx.solicitudColaborador.count.mockResolvedValue(0);
+
+    await expect(
+      servicio.cambiarEstado('sol-1', { estado: 'EN_REVISION' }, personal),
+    ).rejects.toMatchObject({ response: { code: 'NO_ES_RESPONSABLE' } });
+  });
+
+  it('sin responsable, el expediente no se trabaja', async () => {
+    tx.solicitudPrecio.findUnique.mockResolvedValue({ id: 'sol-1', estado: 'RECIBIDA', asignadaAId: null });
+
+    await expect(
+      servicio.cambiarEstado('sol-1', { estado: 'EN_REVISION' }, personal),
+    ).rejects.toMatchObject({ response: { code: 'EXPEDIENTE_SIN_ASIGNAR' } });
+  });
+
   it('rechaza saltos de estado y cambios sobre solicitudes cerradas', async () => {
-    tx.solicitudPrecio.findUnique.mockResolvedValue({ estado: 'RECIBIDA' });
+    tx.solicitudPrecio.findUnique.mockResolvedValue({ id: 'sol-1', estado: 'RECIBIDA', asignadaAId: 'w1' });
     await expect(
       servicio.cambiarEstado('sol-1', { estado: 'COMPLETADA' }, personal),
     ).rejects.toMatchObject({ response: { code: 'TRANSICION_NO_PERMITIDA' } });
 
-    tx.solicitudPrecio.findUnique.mockResolvedValue({ estado: 'COMPLETADA' });
+    tx.solicitudPrecio.findUnique.mockResolvedValue({ id: 'sol-1', estado: 'COMPLETADA', asignadaAId: 'w1' });
     await expect(
       servicio.cambiarEstado('sol-1', { estado: 'EN_REVISION' }, personal),
     ).rejects.toThrow(ConflictException);
@@ -308,7 +350,7 @@ describe('SolicitudesService', () => {
     tx.usuario.findFirst.mockResolvedValue({ id: 'w2', nombre: 'Analista' });
     tx.solicitudPrecio.findUniqueOrThrow.mockResolvedValue({ id: 'sol-1' });
 
-    await servicio.asignar('sol-1', { usuarioId: 'w2' }, personal);
+    await servicio.asignar('sol-1', { usuarioId: 'w2' }, jefe);
 
     expect(tx.solicitudPrecio.update).toHaveBeenCalledWith({
       where: { id: 'sol-1' },
@@ -319,12 +361,18 @@ describe('SolicitudesService', () => {
     });
   });
 
-  it('no asigna a alguien que no es personal del INE', async () => {
+  it('un trabajador no asigna el expediente', async () => {
+    await expect(
+      servicio.asignar('sol-1', { usuarioId: 'w2' }, personal),
+    ).rejects.toMatchObject({ response: { code: 'ASIGNACION_SOLO_JEFE' } });
+  });
+
+  it('no asigna a alguien que no es trabajador del INE', async () => {
     tx.solicitudPrecio.findFirst.mockResolvedValue({ ...completa, estado: 'RECIBIDA' });
     tx.usuario.findFirst.mockResolvedValue(null);
 
     await expect(
-      servicio.asignar('sol-1', { usuarioId: 'u1' }, personal),
+      servicio.asignar('sol-1', { usuarioId: 'u1' }, jefe),
     ).rejects.toMatchObject({ response: { code: 'PERSONA_NO_ASIGNABLE' } });
   });
 
@@ -452,7 +500,7 @@ describe('SolicitudesService', () => {
   });
 
   it('no abre el informe si falta un precio confirmado', async () => {
-    tx.solicitudPrecio.findUnique.mockResolvedValue({ estado: 'EN_ANALISIS' });
+    tx.solicitudPrecio.findUnique.mockResolvedValue({ id: 'sol-1', estado: 'EN_ANALISIS', asignadaAId: 'w1' });
     tx.productoSolicitud.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
     tx.validacionAnalisis.count.mockResolvedValue(1);
 
@@ -463,7 +511,7 @@ describe('SolicitudesService', () => {
   });
 
   it('no cierra el expediente sin una entrega registrada', async () => {
-    tx.solicitudPrecio.findUnique.mockResolvedValue({ estado: 'EN_ENTREGA' });
+    tx.solicitudPrecio.findUnique.mockResolvedValue({ id: 'sol-1', estado: 'EN_ENTREGA', asignadaAId: 'w1' });
     tx.entregaSolicitud.count.mockResolvedValue(0);
 
     await expect(
@@ -504,7 +552,8 @@ describe('SolicitudesService', () => {
 
     const { data } = tx.informeSolicitud.create.mock.calls[0][0];
     expect(data.destinatario).toBe('Dirección de Compras');
-    expect(data.resumen).toContain('No es la plantilla oficial del INE');
+    expect(data.resumen).toContain('Informe técnico');
+    expect(data.resumen).toContain('Oficio');
     expect(data.resumen).toContain('GTQ 21.000');
     expect(data.version).toBe(1);
   });

@@ -20,7 +20,10 @@ describe('NotificacionesService', () => {
       createMany: vi.fn(),
     },
   };
-  const tx = { notificacion: { createMany: vi.fn() } };
+  const tx = {
+    notificacion: { createMany: vi.fn() },
+    usuario: { findMany: vi.fn() },
+  };
   let servicio: NotificacionesService;
 
   beforeEach(() => {
@@ -47,6 +50,25 @@ describe('NotificacionesService', () => {
     await expect(servicio.marcarLeida('aviso-1', solicitante)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('avisa a los jefes activos cuando entra una solicitud nueva', async () => {
+    tx.usuario.findMany.mockResolvedValue([{ id: 'jefe-1' }, { id: 'jefe-2' }]);
+
+    await servicio.avisarJefesNuevaRecepcion(tx as never, {
+      solicitudId: 'sol-1',
+      actorId: 'u1',
+      codigo: 'PR-2026-000001',
+      tituloExpediente: 'Laptops',
+    });
+
+    expect(tx.usuario.findMany).toHaveBeenCalled();
+    const { data } = tx.notificacion.createMany.mock.calls[0][0];
+    expect(data.map((fila: { usuarioId: string }) => fila.usuarioId).sort()).toEqual([
+      'jefe-1',
+      'jefe-2',
+    ]);
+    expect(data[0].titulo).toBe('Nueva solicitud recibida');
   });
 
   it('al avisar omite a quien hizo la acción y, si es nota interna, a quien creó el expediente', async () => {

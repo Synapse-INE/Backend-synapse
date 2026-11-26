@@ -9,7 +9,7 @@ export class PersonalIneService {
     return this.prisma.usuario.findMany({
       where: {
         estado: 'ACTIVO',
-        roles: { some: { rol: { codigo: { in: ['TRABAJADOR_INE', 'ADMIN'] } } } },
+        roles: { some: { rol: { codigo: 'TRABAJADOR_INE' } } },
       },
       orderBy: { nombre: 'asc' },
       select: { id: true, nombre: true },

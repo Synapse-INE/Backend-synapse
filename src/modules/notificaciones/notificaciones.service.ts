@@ -80,6 +80,42 @@ export class NotificacionesService {
     return { actualizadas: cambio.count };
   }
 
+  /** Bandeja del jefe: nueva solicitud en estado RECIBIDA (sin responsable aún). */
+  async avisarJefesNuevaRecepcion(
+    tx: Prisma.TransactionClient,
+    datos: {
+      solicitudId: string;
+      actorId: string;
+      codigo: string;
+      tituloExpediente?: string | null;
+      reenvio?: boolean;
+    },
+  ) {
+    const jefes = await tx.usuario.findMany({
+      where: {
+        estado: 'ACTIVO',
+        roles: { some: { rol: { codigo: 'JEFE' } } },
+      },
+      select: { id: true },
+    });
+    const destinatarios = [
+      ...new Set(jefes.map((persona) => persona.id).filter((id) => id !== datos.actorId)),
+    ];
+    if (destinatarios.length === 0) return;
+    const asunto = datos.reenvio ? 'Expediente reenviado' : 'Nueva solicitud recibida';
+    const detalle = datos.reenvio
+      ? `${datos.codigo} fue corregido y volvió a bandeja.`
+      : `${datos.codigo}${datos.tituloExpediente ? `: ${datos.tituloExpediente}` : ''} espera revisión en bandeja.`;
+    return tx.notificacion.createMany({
+      data: destinatarios.map((usuarioId) => ({
+        usuarioId,
+        solicitudId: datos.solicitudId,
+        titulo: asunto.slice(0, 160),
+        detalle: detalle.slice(0, 500),
+      })),
+    });
+  }
+
   /** Quien hizo la acción no se avisa a sí mismo. */
   avisar(tx: Prisma.TransactionClient, aviso: Aviso) {
     const destinatarios = new Set<string>();

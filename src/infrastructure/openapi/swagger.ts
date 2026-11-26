@@ -18,7 +18,7 @@ export function setupSwagger(
         '**Errores:** siempre `application/problem+json` (RFC 7807) con un `code` estable.',
         '**Formatos:** importes y cantidades como cadena decimal; fechas `YYYY-MM-DD`; marcas de tiempo ISO 8601.',
         '',
-        'Pendientes (no documentados porque no existen): carga de adjuntos, formularios S.11, S.21 y S.22, consulta de auditoría y estadísticas. Los avisos informan lo ya ocurrido; no hay recordatorios por vencimiento.',
+        'Pendientes (no documentados porque no existen): formularios S.11, S.21 y S.22 y consulta de auditoría. Los avisos informan lo ya ocurrido; no hay recordatorios por vencimiento. La media, la mediana y la moda se calculan con los precios comparables de las boletas. Los PDF del expediente se adjuntan en la solicitud.',
       ].join('\n'),
     )
     .setVersion('0.2.0')

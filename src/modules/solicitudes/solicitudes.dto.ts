@@ -36,6 +36,8 @@ export const ESTADOS_SOLICITUD = [
   'EN_ENTREGA',
   'COMPLETADA',
   'RECHAZADA',
+  'EN_ESPERA',
+  'CANCELADA',
 ] as const;
 
 /** Destinos que el personal del INE elige en el cambio de estado. La subsanación sale por el comentario. */
@@ -263,7 +265,7 @@ export class CrearConsultaDto {
   @MaxLength(1000)
   nota?: string;
 
-  /** Referencia textual de la evidencia. La carga de archivos sigue pendiente. */
+  /** Referencia textual de la evidencia. El PDF, si se adjunta, es opcional. */
   @IsOptional()
   @Transform(recortar)
   @IsString()

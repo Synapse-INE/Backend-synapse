@@ -1,3 +1,5 @@
+import { textoEstadisticas, type EstadisticasExpediente } from './estadisticas-precios.js';
+
 export type ProductoBorrador = {
   numero: number;
   nombre: string;
@@ -7,17 +9,17 @@ export type ProductoBorrador = {
   moneda: string | null;
 };
 
-/** Texto de trabajo armado con lo ya guardado. No es una plantilla oficial. */
+/** Un solo documento con el informe técnico y el oficio. El analista puede corregir el texto antes de emitirlo. */
 export function borradorInforme(datos: {
-  tipo: 'INFORME_TECNICO' | 'OFICIO';
   codigo: string;
   titulo: string;
   institucion: string;
   destinatario: string;
+  elaboradoPor: string;
+  fecha: string;
   productos: ProductoBorrador[];
-  consultas: number;
+  estadisticas: EstadisticasExpediente;
 }) {
-  const tituloDoc = datos.tipo === 'OFICIO' ? 'oficio' : 'informe técnico';
   const productos = datos.productos.map((producto) => {
     const precio = producto.precioAdoptado
       ? `${producto.moneda ?? 'GTQ'} ${producto.precioAdoptado} por ${producto.unidadMedida ?? 'unidad'}`
@@ -28,12 +30,19 @@ export function borradorInforme(datos: {
   });
 
   return [
-    `Borrador de ${tituloDoc}. No es la plantilla oficial del INE; una persona debe revisarlo antes de emitirlo.`,
-    `Expediente ${datos.codigo}. ${datos.titulo}.`,
+    'Instituto Nacional de Estadística',
+    'Dirección de Precios e Índices de Referencia',
+    `Documento del expediente ${datos.codigo}. ${datos.titulo}.`,
     `Entidad solicitante: ${datos.institucion}.`,
-    `Destinatario indicado: ${datos.destinatario}.`,
-    `Consultas de mercado registradas: ${datos.consultas}.`,
+    `Elaborado por: ${datos.elaboradoPor}.`,
+    `Fecha: ${datos.fecha}.`,
+    `Destinatario: ${datos.destinatario}.`,
+    'Informe técnico',
     'Precios de referencia que el analista dejó confirmados:',
     ...(productos.length > 0 ? productos : ['No hay productos en el expediente.']),
+    'Estadística de los precios comparables',
+    textoEstadisticas(datos.estadisticas),
+    'Oficio',
+    `Se traslada a ${datos.destinatario} el resultado del expediente ${datos.codigo}, conforme a los precios de referencia confirmados en el informe técnico de este mismo documento.`,
   ].join('\n');
 }

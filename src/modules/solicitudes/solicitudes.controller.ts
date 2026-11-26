@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -10,7 +11,11 @@ import {
   Post,
   Query,
   Req,
+  UnprocessableEntityException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiCreatedResponse,
   ApiOkResponse,
@@ -40,6 +45,7 @@ import {
   RegistrarEntregaDto,
   RegistrarValidacionDto,
 } from './solicitudes.dto.js';
+import { AdjuntosService, type ArchivoRecibido } from './adjuntos.service.js';
 import { SolicitudesService } from './solicitudes.service.js';
 
 const EJEMPLO_SOLICITUD = {
@@ -89,10 +95,13 @@ const EJEMPLO_SOLICITUD = {
 };
 
 @Controller('solicitudes')
-@Roles('SOLICITANTE', 'TRABAJADOR_INE', 'ADMIN')
+@Roles('SOLICITANTE', 'JEFE', 'TRABAJADOR_INE', 'ADMIN')
 @ApiTags('Solicitudes de precio (S.00)')
 export class SolicitudesController {
-  constructor(private readonly solicitudes: SolicitudesService) {}
+  constructor(
+    private readonly solicitudes: SolicitudesService,
+    private readonly adjuntos: AdjuntosService,
+  ) {}
 
   @Post()
   @Roles('SOLICITANTE')
@@ -119,7 +128,9 @@ export class SolicitudesController {
     summary: 'Listar solicitudes',
     description:
       'El solicitante ve sus borradores y lo enviado por su institución. ' +
-      'El personal del INE ve solo lo enviado. `asignadasAMi=true` limita la lista al responsable. ' +
+      'El personal del INE ve solo lo enviado, primero lo que lleva más tiempo de atención. `asignadasAMi=true` limita la lista al responsable. ' +
+      'Cada expediente enviado trae `atencion`: 15 días corridos desde el envío. No es una meta. ' +
+      'El conteo se detiene mientras la entidad corrige y sigue durante la espera interna del INE. ' +
       'Paginación con `limite` (1–100, por defecto 25) y `desplazamiento`.',
   })
   @ApiOkResponse({
@@ -225,7 +236,8 @@ export class SolicitudesController {
       'Camino: `RECIBIDA → EN_REVISION → EN_INVESTIGACION → EN_ANALISIS → EN_INFORME → EN_ENTREGA → COMPLETADA`. ' +
       '`RECHAZADA` sale de cualquiera de esas etapas, salvo los estados terminales. ' +
       'Pasar a `EN_INFORME` exige un precio confirmado por el analista en cada producto. ' +
-      'Pasar a `EN_ENTREGA` exige informe técnico y oficio emitidos. Cerrar exige al menos una entrega con constancia. ' +
+      'Pasar a `EN_ENTREGA` exige el documento del expediente emitido. Cerrar exige al menos una entrega con constancia. ' +
+      'El jefe asigna primero a un trabajador. Después solo esa persona, un colaborador o un administrador puede avanzar. ' +
       'La devolución a la entidad no se hace aquí: va en el comentario con `devolver`. El `motivo` queda en el historial.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -246,13 +258,13 @@ export class SolicitudesController {
   }
 
   @Post(':id/asignar')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, ADMIN' })
   @ApiOperation({
-    summary: 'Asignar el expediente a una persona del INE',
+    summary: 'Asignar el expediente a un trabajador',
     description:
-      'La persona debe estar activa y tener el rol `TRABAJADOR_INE` o `ADMIN`. No cambia el estado. ' +
+      'Solo el jefe. La persona debe estar activa y tener el rol `TRABAJADOR_INE`. No cambia el estado. ' +
       'No se asigna un expediente cerrado.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -409,6 +421,25 @@ export class SolicitudesController {
     return this.solicitudes.registrarValidacion(id, body, request.auth, request.ip);
   }
 
+  @Get(':id/estadisticas')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
+  @ApiProtegido({ csrf: false, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
+  @ApiOperation({
+    summary: 'Calcular la media, la mediana y la moda del expediente',
+    description:
+      'Usa los precios de boleta que no están marcados como atípicos, en quetzales y en la misma unidad del producto. ' +
+      'El resultado se vuelve a calcular hasta que se emite el documento; la copia emitida queda fija.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({ description: 'Medidas y gráfica por producto.' })
+  @ApiProblema(404, 'La solicitud no existe o no es visible (`SOLICITUD_NO_ENCONTRADA`).')
+  estadisticas(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.solicitudes.estadisticas(id, request.auth);
+  }
+
   @Post(':id/informes')
   @Roles('TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
@@ -416,8 +447,7 @@ export class SolicitudesController {
   @ApiOperation({
     summary: 'Crear un borrador de informe técnico u oficio',
     description:
-      'Solo en `EN_INFORME`. El destinatario es texto libre. Si no se envía `resumen`, se arma un borrador con los datos guardados. ' +
-      'Ese texto no es la plantilla oficial. Cada alta es una versión nueva y no borra las anteriores.',
+      'Solo en `EN_INFORME`. El documento reúne el informe técnico y el oficio. Si no se envía `resumen`, se arma con los datos guardados, incluida la interpretación de la media, la mediana y la moda. El analista puede corregirlo antes de emitirlo.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ schema: { example: EJEMPLO_SOLICITUD } })
@@ -437,7 +467,7 @@ export class SolicitudesController {
   @ApiOperation({
     summary: 'Emitir un borrador de informe u oficio',
     description:
-      'La emisión es una decisión de una persona. El informe técnico exige precios confirmados. El oficio exige un informe técnico ya emitido.',
+      'La emisión es una decisión de una persona. Congela la gráfica con los precios comparables de ese momento. Con un documento emitido ya se puede pasar a la entrega.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiParam({ name: 'informeId', format: 'uuid' })
@@ -460,7 +490,7 @@ export class SolicitudesController {
     summary: 'Registrar una entrega oficial',
     description:
       'Solo en `EN_ENTREGA`. El medio puede ser `DIGITAL`, `FISICA` o `CD`. El destinatario es texto. ' +
-      'La constancia es una referencia textual hasta que exista la carga de archivos. Puede haber varias entregas.',
+      'La constancia textual sigue siendo el registro de la entrega. El PDF, si se adjunta, no es obligatorio. Puede haber varias entregas.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ schema: { example: EJEMPLO_SOLICITUD } })
@@ -473,4 +503,184 @@ export class SolicitudesController {
   ) {
     return this.solicitudes.registrarEntrega(id, body, request.auth, request.ip);
   }
+
+  @Post(':id/pausar')
+  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiOperation({
+    summary: 'Poner el expediente en espera del INE',
+    description:
+      'Pausa interna. No devuelve el caso a la entidad. Guarda el estado anterior para reanudarlo. ' +
+      'No se pausa un borrador, una subsanación, un caso ya en espera ni uno cerrado.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiProblema(403, 'No es el responsable (`NO_ES_RESPONSABLE`).')
+  @ApiProblema(409, 'El estado no admite la pausa (`TRANSICION_NO_PERMITIDA`).')
+  pausar(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest) {
+    return this.solicitudes.pausar(id, request.auth, request.ip);
+  }
+
+  @Post(':id/reanudar')
+  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiOperation({
+    summary: 'Reanudar un expediente en espera',
+    description: 'Vuelve al estado que tenía antes de la pausa.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiProblema(409, 'No está en espera (`TRANSICION_NO_PERMITIDA`).')
+  reanudar(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest) {
+    return this.solicitudes.reanudar(id, request.auth, request.ip);
+  }
+
+  @Post(':id/cancelar')
+  @Roles('SOLICITANTE')
+  @HttpCode(HttpStatus.OK)
+  @ApiProtegido({ csrf: true, roles: 'SOLICITANTE' })
+  @ApiOperation({
+    summary: 'Anular un expediente enviado',
+    description:
+      'Solo quien lo creó. No anula un borrador (ese se elimina), ni un expediente en entrega o ya cerrado.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiProblema(409, 'Ya no se puede anular (`TRANSICION_NO_PERMITIDA`).')
+  cancelar(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest) {
+    return this.solicitudes.cancelar(id, request.auth, request.ip);
+  }
+
+  @Delete(':id')
+  @Roles('SOLICITANTE')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiProtegido({ csrf: true, roles: 'SOLICITANTE' })
+  @ApiOperation({
+    summary: 'Eliminar un borrador',
+    description: 'Solo el autor y solo mientras sigue en `BORRADOR`. Un expediente enviado se anula, no se borra.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiProblema(409, 'Ya fue enviado (`SOLO_BORRADOR`).')
+  descartar(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest) {
+    return this.solicitudes.descartar(id, request.auth, request.ip);
+  }
+
+  @Post(':id/colaboradores')
+  @Roles('JEFE', 'ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @ApiProtegido({ csrf: true, roles: 'JEFE, ADMIN' })
+  @ApiOperation({
+    summary: 'Agregar un colaborador',
+    description:
+      'Solo el jefe. El colaborador es un trabajador activo. Ve el expediente y puede trabajarlo junto con el responsable. El responsable sigue siendo uno.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiProblema(409, 'Ya es el responsable (`YA_ES_RESPONSABLE`) o el expediente está cerrado (`SOLICITUD_CERRADA`).')
+  @ApiProblema(422, 'No es personal activo (`PERSONA_NO_ASIGNABLE`).')
+  agregarColaborador(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: AsignarSolicitudDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.solicitudes.agregarColaborador(id, body, request.auth, request.ip);
+  }
+
+  @Delete(':id/colaboradores/:usuarioId')
+  @Roles('JEFE', 'ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @ApiProtegido({ csrf: true, roles: 'JEFE, ADMIN' })
+  @ApiOperation({ summary: 'Retirar un colaborador' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'usuarioId', format: 'uuid' })
+  @ApiProblema(404, 'No colabora en el expediente (`COLABORADOR_NO_ENCONTRADO`).')
+  quitarColaborador(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('usuarioId', ParseUUIDPipe) usuarioId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.solicitudes.quitarColaborador(id, usuarioId, request.auth, request.ip);
+  }
+
+  @Post(':id/adjuntos')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiProtegido({ csrf: true })
+  @ApiOperation({
+    summary: 'Adjuntar un PDF',
+    description:
+      'Solo PDF, hasta 10 MB. El de la solicitud lo agrega el autor en `BORRADOR` y queda fijo al enviarla. ' +
+      'La evidencia de una boleta y la constancia de una entrega son opcionales: su ausencia no frena el expediente.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiCreatedResponse({ schema: { example: { id: EJEMPLO_SOLICITUD.id, nombreOriginal: 'anexo.pdf', tamanoBytes: 1200 } } })
+  @ApiProblema(422, 'No es PDF (`ARCHIVO_NO_PDF`), pesa más de 10 MB (`ARCHIVO_DEMASIADO_GRANDE`) o el expediente ya no admite el archivo (`ARCHIVO_NO_EDITABLE`).')
+  @UseInterceptors(FileInterceptor('archivo', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  subirAdjunto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() archivo: ArchivoRecibido,
+    @Body('consultaId') consultaId: string | undefined,
+    @Body('entregaId') entregaId: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.adjuntos.guardar(
+      id,
+      archivo,
+      { consultaId: uuidOpcional(consultaId, 'consultaId'), entregaId: uuidOpcional(entregaId, 'entregaId') },
+      request.auth,
+    );
+  }
+
+  @Get(':id/adjuntos')
+  @ApiProtegido({ csrf: false })
+  @ApiOperation({
+    summary: 'Listar los PDF del expediente',
+    description:
+      'El INE ve todos. Quien lo pidió ve el PDF de la solicitud y, cuando el expediente está completado, la constancia de entrega. La evidencia de las boletas queda en el INE.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  listarAdjuntos(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest) {
+    return this.adjuntos.listar(id, request.auth);
+  }
+
+  @Get(':id/adjuntos/:adjuntoId')
+  @ApiProtegido({ csrf: false })
+  @ApiOperation({ summary: 'Descargar un PDF del expediente' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'adjuntoId', format: 'uuid' })
+  @ApiProblema(404, 'El archivo no está en el expediente (`ADJUNTO_NO_ENCONTRADO`).')
+  descargarAdjunto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('adjuntoId', ParseUUIDPipe) adjuntoId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.adjuntos.descargar(id, adjuntoId, request.auth);
+  }
+
+  @Delete(':id/adjuntos/:adjuntoId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiProtegido({ csrf: true })
+  @ApiOperation({
+    summary: 'Quitar un PDF de la solicitud',
+    description: 'Solo el autor y solo en `BORRADOR`. La evidencia de una boleta y la constancia de entrega no se quitan por esta vía.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'adjuntoId', format: 'uuid' })
+  quitarAdjunto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('adjuntoId', ParseUUIDPipe) adjuntoId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.adjuntos.quitar(id, adjuntoId, request.auth);
+  }
+}
+
+function uuidOpcional(valor: string | undefined, campo: string) {
+  const texto = valor?.trim();
+  if (!texto) return undefined;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(texto)) {
+    throw new UnprocessableEntityException({
+      code: 'VALIDACION_FALLIDA',
+      detail: `${campo} no es un identificador válido.`,
+      errors: [{ field: campo, message: 'UUID inválido' }],
+    });
+  }
+  return texto;
 }

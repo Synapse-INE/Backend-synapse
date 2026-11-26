@@ -12,7 +12,8 @@ export class CatalogoIneController {
   constructor(private readonly catalogo: CatalogoIneService) {}
 
   @Get()
-  @ApiProtegido({ csrf: false, roles: 'TRABAJADOR_INE, ADMIN' })
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
+  @ApiProtegido({ csrf: false, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Buscar en el catálogo interno importado',
     description:

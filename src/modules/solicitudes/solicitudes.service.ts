@@ -11,7 +11,9 @@ import { Prisma } from '../../infrastructure/database/generated/client.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
 import { NotificacionesService } from '../notificaciones/notificaciones.service.js';
+import { medirAtencion, type AtencionExpediente } from './atencion.js';
 import { borradorInforme } from './borrador-informe.js';
+import { medirExpediente } from './estadisticas-precios.js';
 import type {
   ActualizarSolicitudDto,
   AsignarSolicitudDto,
@@ -41,7 +43,24 @@ const TRANSICIONES: Record<string, string[]> = {
 
 const PUEDE_DEVOLVER = new Set(['EN_REVISION', 'EN_INVESTIGACION', 'EN_ANALISIS']);
 const EDITABLES = new Set(['BORRADOR', 'PENDIENTE_SUBSANACION']);
-const CERRADOS = new Set(['COMPLETADA', 'RECHAZADA']);
+const CERRADOS = new Set(['COMPLETADA', 'RECHAZADA', 'CANCELADA']);
+const PAUSABLES = new Set([
+  'RECIBIDA',
+  'EN_REVISION',
+  'EN_INVESTIGACION',
+  'EN_ANALISIS',
+  'EN_INFORME',
+  'EN_ENTREGA',
+]);
+const CANCELABLES = new Set([
+  'RECIBIDA',
+  'EN_REVISION',
+  'PENDIENTE_SUBSANACION',
+  'EN_INVESTIGACION',
+  'EN_ANALISIS',
+  'EN_INFORME',
+  'EN_ESPERA',
+]);
 
 const DETALLE = {
   id: true,
@@ -60,6 +79,7 @@ const DETALLE = {
   codigo: true,
   creadaPorId: true,
   asignadaAId: true,
+  estadoAlPausar: true,
   asignadaA: { select: { id: true, nombre: true } },
   enviadaEn: true,
   createdAt: true,
@@ -120,6 +140,7 @@ const INFORME = {
   version: true,
   destinatario: true,
   resumen: true,
+  estadisticas: true,
   estado: true,
   emitidoEn: true,
   createdAt: true,
@@ -200,7 +221,9 @@ export class SolicitudesService {
       this.prisma.solicitudPrecio.count({ where }),
       this.prisma.solicitudPrecio.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: this.esPersonalINE(actor)
+          ? [{ enviadaEn: 'asc' }, { createdAt: 'asc' }]
+          : { createdAt: 'desc' },
         take: filtros.limite ?? 25,
         skip: filtros.desplazamiento ?? 0,
         select: {
@@ -210,16 +233,28 @@ export class SolicitudesService {
           modalidad: true,
           estado: true,
           asignadaAId: true,
+          asignadaA: { select: { id: true, nombre: true } },
           institucionSolicitante: true,
           creadaPorId: true,
           enviadaEn: true,
           createdAt: true,
+          updatedAt: true,
+          historial: {
+            orderBy: { createdAt: 'asc' },
+            select: { estadoNuevo: true, createdAt: true },
+          },
           _count: { select: { productos: true } },
         },
       }),
     ]);
 
-    return { total, solicitudes };
+    return {
+      total,
+      solicitudes: solicitudes.map(({ historial, ...solicitud }) => ({
+        ...solicitud,
+        atencion: medirAtencion({ ...solicitud, historial }),
+      })),
+    };
   }
 
   async obtener(id: string, actor: Actor) {
@@ -329,9 +364,15 @@ export class SolicitudesService {
         recursoId: id,
         ip,
       });
+      await this.notificaciones.avisarJefesNuevaRecepcion(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        codigo: actual.codigo ?? id,
+        tituloExpediente: actual.titulo,
+      });
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
-          where: { id },
+        where: { id },
           select: this.detallePara(actor),
         }),
         actor,
@@ -353,6 +394,7 @@ export class SolicitudesService {
       if (!actual) {
         throw new NotFoundException(this.noEncontrada());
       }
+      await this.exigirEncargado(tx, actual, actor);
       if (!TRANSICIONES[actual.estado]?.includes(dto.estado)) {
         throw new ConflictException({
           code: 'TRANSICION_NO_PERMITIDA',
@@ -400,7 +442,7 @@ export class SolicitudesService {
       );
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
-          where: { id },
+        where: { id },
           select: this.detallePara(actor),
         }),
         actor,
@@ -409,7 +451,7 @@ export class SolicitudesService {
   }
 
   async asignar(id: string, dto: AsignarSolicitudDto, actor: Actor, ip?: string) {
-    this.exigirPersonal(actor);
+    this.exigirJefe(actor);
     return this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
       if (CERRADOS.has(actual.estado)) {
@@ -422,14 +464,14 @@ export class SolicitudesService {
         where: {
           id: dto.usuarioId,
           estado: 'ACTIVO',
-          roles: { some: { rol: { codigo: { in: ['TRABAJADOR_INE', 'ADMIN'] } } } },
+          roles: { some: { rol: { codigo: 'TRABAJADOR_INE' } } },
         },
         select: { id: true, nombre: true },
       });
       if (!persona) {
         throw new UnprocessableEntityException({
           code: 'PERSONA_NO_ASIGNABLE',
-          detail: 'La persona elegida no es personal activo del INE.',
+          detail: 'La persona elegida tiene que ser un trabajador activo del INE.',
         });
       }
       await tx.solicitudPrecio.update({
@@ -492,11 +534,14 @@ export class SolicitudesService {
           detail: 'Un expediente cerrado no recibe comentarios.',
         });
       }
-      if (devolver && !PUEDE_DEVOLVER.has(actual.estado)) {
-        throw new ConflictException({
-          code: 'TRANSICION_NO_PERMITIDA',
-          detail: 'Solo se devuelve un expediente que está en revisión, investigación o análisis.',
-        });
+      if (devolver) {
+        await this.exigirEncargado(tx, actual, actor);
+        if (!PUEDE_DEVOLVER.has(actual.estado)) {
+          throw new ConflictException({
+            code: 'TRANSICION_NO_PERMITIDA',
+            detail: 'Solo se devuelve un expediente que está en revisión, investigación o análisis.',
+          });
+        }
       }
 
       await tx.solicitudComentario.create({
@@ -614,6 +659,13 @@ export class SolicitudesService {
         'Expediente reenviado',
         `${actual.codigo} fue corregido y reenviado.`,
       );
+      await this.notificaciones.avisarJefesNuevaRecepcion(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        codigo: actual.codigo ?? id,
+        tituloExpediente: actual.titulo,
+        reenvio: true,
+      });
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
           where: { id },
@@ -641,6 +693,7 @@ export class SolicitudesService {
 
     return this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(
         actual.estado,
         ETAPAS_BOLETA,
@@ -730,6 +783,7 @@ export class SolicitudesService {
     this.exigirPersonal(actor);
     return this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(
         actual.estado,
         ['EN_ANALISIS'],
@@ -785,6 +839,7 @@ export class SolicitudesService {
     const confirmar = Boolean(dto.confirmar);
     return this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(actual.estado, ['EN_ANALISIS'], 'El análisis se registra en EN_ANALISIS.');
       const producto = await tx.productoSolicitud.findFirst({
         where: { id: dto.productoSolicitudId, solicitudId: id },
@@ -855,12 +910,13 @@ export class SolicitudesService {
     this.exigirPersonal(actor);
     return this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(actual.estado, ['EN_INFORME'], 'El informe se prepara en EN_INFORME.');
       const ultima = await tx.informeSolicitud.aggregate({
         where: { solicitudId: id, tipo: dto.tipo },
         _max: { version: true },
       });
-      const resumen = dto.resumen ?? (await this.textoBorrador(tx, id, actual, dto));
+      const resumen = dto.resumen ?? (await this.textoBorrador(tx, id, actual, dto, actor.usuario.nombre));
       await tx.informeSolicitud.create({
         data: {
           solicitudId: id,
@@ -900,6 +956,7 @@ export class SolicitudesService {
     this.exigirPersonal(actor);
     return this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(actual.estado, ['EN_INFORME'], 'Solo se emite un documento en EN_INFORME.');
       const informe = await tx.informeSolicitud.findFirst({
         where: { id: informeId, solicitudId: id },
@@ -930,9 +987,14 @@ export class SolicitudesService {
           });
         }
       }
+      const estadisticas = await this.estadisticasDe(tx, id, actual.productos);
       const cambio = await tx.informeSolicitud.updateMany({
         where: { id: informe.id, estado: 'BORRADOR' },
-        data: { estado: 'EMITIDO', emitidoEn: new Date() },
+        data: {
+          estado: 'EMITIDO',
+          emitidoEn: new Date(),
+          estadisticas: estadisticas as Prisma.InputJsonValue,
+        },
       });
       if (cambio.count !== 1) {
         throw new ConflictException({
@@ -976,6 +1038,7 @@ export class SolicitudesService {
     this.exigirPersonal(actor);
     return this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(actual.estado, ['EN_ENTREGA'], 'La entrega se registra en EN_ENTREGA.');
       if (dto.informeId) {
         const informe = await tx.informeSolicitud.findFirst({
@@ -1049,6 +1112,7 @@ export class SolicitudesService {
 
     return this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(
         actual.estado,
         ETAPAS_BOLETA,
@@ -1182,11 +1246,270 @@ export class SolicitudesService {
     });
   }
 
+  async pausar(id: string, actor: Actor, ip?: string) {
+    this.exigirPersonal(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
+      if (!PAUSABLES.has(actual.estado)) {
+        throw new ConflictException({
+          code: 'TRANSICION_NO_PERMITIDA',
+          detail: 'Este expediente no se puede poner en espera desde su estado actual.',
+        });
+      }
+      await tx.solicitudPrecio.update({
+        where: { id },
+        data: { estado: 'EN_ESPERA', estadoAlPausar: actual.estado },
+      });
+      await this.historial(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        accion: 'Expediente en espera',
+        estadoAnterior: actual.estado,
+        estadoNuevo: 'EN_ESPERA',
+      });
+      await this.auditoria.registrarEn(tx, {
+        actorId: actor.usuario.id,
+        accion: 'SOLICITUD_PAUSADA',
+        recurso: 'solicitud_precio',
+        recursoId: id,
+        ip,
+        metadatos: { desde: actual.estado },
+      });
+      await this.avisar(
+        tx,
+        actual,
+        actor,
+        'Expediente en espera',
+        `${actual.codigo ?? 'El expediente'} quedó en espera del INE.`,
+      );
+      return this.presentar(
+        await tx.solicitudPrecio.findUniqueOrThrow({
+          where: { id },
+          select: this.detallePara(actor),
+        }),
+        actor,
+      );
+    });
+  }
+
+  async reanudar(id: string, actor: Actor, ip?: string) {
+    this.exigirPersonal(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const actual = await this.cargarLegible(id, actor, tx);
+      await this.exigirEncargado(tx, actual, actor);
+      if (actual.estado !== 'EN_ESPERA' || !actual.estadoAlPausar) {
+        throw new ConflictException({
+          code: 'TRANSICION_NO_PERMITIDA',
+          detail: 'Solo se reanuda un expediente que está en espera.',
+        });
+      }
+      const destino = actual.estadoAlPausar;
+      await tx.solicitudPrecio.update({
+        where: { id },
+        data: { estado: destino, estadoAlPausar: null },
+      });
+      await this.historial(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        accion: 'Expediente reanudado',
+        estadoAnterior: 'EN_ESPERA',
+        estadoNuevo: destino,
+      });
+      await this.auditoria.registrarEn(tx, {
+        actorId: actor.usuario.id,
+        accion: 'SOLICITUD_REANUDADA',
+        recurso: 'solicitud_precio',
+        recursoId: id,
+        ip,
+        metadatos: { hacia: destino },
+      });
+      await this.avisar(
+        tx,
+        actual,
+        actor,
+        'Expediente reanudado',
+        `${actual.codigo ?? 'El expediente'} volvió a ${destino}.`,
+      );
+      return this.presentar(
+        await tx.solicitudPrecio.findUniqueOrThrow({
+          where: { id },
+          select: this.detallePara(actor),
+        }),
+        actor,
+      );
+    });
+  }
+
+  async cancelar(id: string, actor: Actor, ip?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const actual = await this.cargarLegible(id, actor, tx);
+      this.exigirAutor(actual.creadaPorId, actor);
+      if (!CANCELABLES.has(actual.estado)) {
+        throw new ConflictException({
+          code: 'TRANSICION_NO_PERMITIDA',
+          detail: 'Este expediente ya no se puede anular.',
+        });
+      }
+      await tx.solicitudPrecio.update({
+        where: { id },
+        data: { estado: 'CANCELADA', estadoAlPausar: null },
+      });
+      await this.historial(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        accion: 'Expediente anulado',
+        estadoAnterior: actual.estado,
+        estadoNuevo: 'CANCELADA',
+      });
+      await this.auditoria.registrarEn(tx, {
+        actorId: actor.usuario.id,
+        accion: 'SOLICITUD_CANCELADA',
+        recurso: 'solicitud_precio',
+        recursoId: id,
+        ip,
+      });
+      await this.avisar(
+        tx,
+        actual,
+        actor,
+        'Expediente anulado',
+        `${actual.codigo ?? 'El expediente'} fue anulado por quien lo solicitó.`,
+        false,
+      );
+      return this.presentar(
+        await tx.solicitudPrecio.findUniqueOrThrow({
+          where: { id },
+          select: this.detallePara(actor),
+        }),
+        actor,
+      );
+    });
+  }
+
+  async descartar(id: string, actor: Actor, ip?: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const actual = await this.cargarLegible(id, actor, tx);
+      this.exigirAutor(actual.creadaPorId, actor);
+      this.exigirEstado(
+        actual.estado,
+        'BORRADOR',
+        'SOLO_BORRADOR',
+        'Solo se elimina un borrador que todavía no se envió.',
+      );
+      await tx.solicitudPrecio.delete({ where: { id } });
+      await this.auditoria.registrarEn(tx, {
+        actorId: actor.usuario.id,
+        accion: 'SOLICITUD_DESCARTADA',
+        recurso: 'solicitud_precio',
+        recursoId: id,
+        ip,
+      });
+    });
+  }
+
+  async agregarColaborador(id: string, dto: AsignarSolicitudDto, actor: Actor, ip?: string) {
+    this.exigirJefe(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const actual = await this.cargarLegible(id, actor, tx);
+      if (CERRADOS.has(actual.estado)) {
+        throw new ConflictException({
+          code: 'SOLICITUD_CERRADA',
+          detail: 'Un expediente cerrado no suma colaboradores.',
+        });
+      }
+      if (dto.usuarioId === actual.asignadaAId) {
+        throw new ConflictException({
+          code: 'YA_ES_RESPONSABLE',
+          detail: 'Esa persona ya es la responsable del expediente.',
+        });
+      }
+      const persona = await tx.usuario.findFirst({
+        where: {
+          id: dto.usuarioId,
+          estado: 'ACTIVO',
+          roles: { some: { rol: { codigo: 'TRABAJADOR_INE' } } },
+        },
+        select: { id: true, nombre: true },
+      });
+      if (!persona) {
+        throw new UnprocessableEntityException({
+          code: 'PERSONA_NO_ASIGNABLE',
+          detail: 'El colaborador tiene que ser un trabajador activo del INE.',
+        });
+      }
+      await tx.solicitudColaborador.upsert({
+        where: { solicitudId_usuarioId: { solicitudId: id, usuarioId: persona.id } },
+        create: { solicitudId: id, usuarioId: persona.id, agregadoPorId: actor.usuario.id },
+        update: {},
+      });
+      await this.historial(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        accion: 'Colaborador agregado',
+        estadoNuevo: actual.estado,
+        detalle: persona.nombre,
+      });
+      await this.auditoria.registrarEn(tx, {
+        actorId: actor.usuario.id,
+        accion: 'COLABORADOR_AGREGADO',
+        recurso: 'solicitud_precio',
+        recursoId: id,
+        ip,
+        metadatos: { usuarioId: persona.id },
+      });
+      return this.presentar(
+        await tx.solicitudPrecio.findUniqueOrThrow({
+          where: { id },
+          select: this.detallePara(actor),
+        }),
+        actor,
+      );
+    });
+  }
+
+  async quitarColaborador(id: string, usuarioId: string, actor: Actor, ip?: string) {
+    this.exigirJefe(actor);
+    return this.prisma.$transaction(async (tx) => {
+      const actual = await this.cargarLegible(id, actor, tx);
+      const quitado = await tx.solicitudColaborador.deleteMany({
+        where: { solicitudId: id, usuarioId },
+      });
+      if (quitado.count !== 1) {
+        throw new NotFoundException({
+          code: 'COLABORADOR_NO_ENCONTRADO',
+          detail: 'Esa persona no colabora en el expediente.',
+        });
+      }
+      await this.historial(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        accion: 'Colaborador retirado',
+        estadoNuevo: actual.estado,
+      });
+      await this.auditoria.registrarEn(tx, {
+        actorId: actor.usuario.id,
+        accion: 'COLABORADOR_RETIRADO',
+        recurso: 'solicitud_precio',
+        recursoId: id,
+        ip,
+        metadatos: { usuarioId },
+      });
+      return this.presentar(
+        await tx.solicitudPrecio.findUniqueOrThrow({
+          where: { id },
+          select: this.detallePara(actor),
+        }),
+        actor,
+      );
+    });
+  }
+
   // ---- helpers ----
 
   private esPersonalINE(actor: Actor) {
     return actor.usuario.roles.some(
-      (rol) => rol === 'ADMIN' || rol === 'TRABAJADOR_INE',
+      (rol) => rol === 'ADMIN' || rol === 'JEFE' || rol === 'TRABAJADOR_INE',
     );
   }
 
@@ -1235,6 +1558,40 @@ export class SolicitudesService {
       throw new ForbiddenException({
         code: 'ROL_NO_PERMITIDO',
         detail: 'Esta acción es del personal del INE.',
+      });
+    }
+  }
+
+  private exigirJefe(actor: Actor) {
+    if (!actor.usuario.roles.some((rol) => rol === 'JEFE' || rol === 'ADMIN')) {
+      throw new ForbiddenException({
+        code: 'ASIGNACION_SOLO_JEFE',
+        detail: 'Solo el jefe asigna el expediente a un trabajador.',
+      });
+    }
+  }
+
+  /** Sin responsable no se trabaja el caso. Con responsable, lo trabaja esa persona, un colaborador o un administrador. */
+  private async exigirEncargado(
+    tx: Prisma.TransactionClient,
+    solicitud: { id: string; asignadaAId: string | null },
+    actor: Actor,
+  ) {
+    if (actor.usuario.roles.includes('ADMIN')) return;
+    if (!solicitud.asignadaAId) {
+      throw new ForbiddenException({
+        code: 'EXPEDIENTE_SIN_ASIGNAR',
+        detail: 'El jefe tiene que asignar este expediente a un trabajador antes de trabajarlo.',
+      });
+    }
+    if (solicitud.asignadaAId === actor.usuario.id) return;
+    const colabora = await tx.solicitudColaborador.count({
+      where: { solicitudId: solicitud.id, usuarioId: actor.usuario.id },
+    });
+    if (colabora < 1) {
+      throw new ForbiddenException({
+        code: 'NO_ES_RESPONSABLE',
+        detail: 'Este expediente lo trabaja la persona asignada o un colaborador.',
       });
     }
   }
@@ -1296,29 +1653,38 @@ export class SolicitudesService {
         orderBy: { createdAt: 'asc' as const },
         select: ENTREGA,
       },
+      colaboradores: {
+        orderBy: { createdAt: 'asc' as const },
+        select: {
+          createdAt: true,
+          usuario: { select: { id: true, nombre: true } },
+        },
+      },
     };
   }
 
   private presentar<
     T extends {
       estado?: string;
+      enviadaEn?: Date | null;
+      updatedAt?: Date | null;
+      historial?: Array<{ estadoNuevo?: string | null; createdAt: Date | string }>;
       informes?: Array<{ estado: string }>;
       entregas?: unknown[];
     },
-  >(solicitud: T, actor: Actor): T {
-    if (this.esPersonalINE(actor) || !solicitud.estado) {
-      return solicitud;
-    }
-    const oficial = solicitud.estado === 'COMPLETADA';
-    return {
-      ...solicitud,
-      consultas: [],
-      validaciones: [],
-      informes: oficial
-        ? (solicitud.informes ?? []).filter((informe) => informe.estado === 'EMITIDO')
-        : [],
-      entregas: oficial ? (solicitud.entregas ?? []) : [],
-    };
+  >(solicitud: T, actor: Actor): T & { atencion: AtencionExpediente | null } {
+    const visible = this.esPersonalINE(actor) || !solicitud.estado
+      ? solicitud
+      : {
+          ...solicitud,
+          consultas: [],
+          validaciones: [],
+          informes: solicitud.estado === 'COMPLETADA'
+            ? (solicitud.informes ?? []).filter((informe) => informe.estado === 'EMITIDO')
+            : [],
+          entregas: solicitud.estado === 'COMPLETADA' ? (solicitud.entregas ?? []) : [],
+        };
+    return { ...visible, atencion: medirAtencion(visible) };
   }
 
   private exigirEtapa(estado: string, permitidos: string[], detail: string) {
@@ -1372,15 +1738,13 @@ export class SolicitudesService {
       await this.exigirAnalisisConfirmado(tx, solicitudId);
     }
     if (destino === 'EN_ENTREGA') {
-      const emitidos = await tx.informeSolicitud.findMany({
+      const emitidos = await tx.informeSolicitud.count({
         where: { solicitudId, estado: 'EMITIDO' },
-        select: { tipo: true },
       });
-      const tipos = new Set(emitidos.map((informe) => informe.tipo));
-      if (!tipos.has('INFORME_TECNICO') || !tipos.has('OFICIO')) {
+      if (emitidos < 1) {
         throw new ConflictException({
           code: 'INFORME_INCOMPLETO',
-          detail: 'Antes de la entrega tienen que estar emitidos el informe técnico y el oficio.',
+          detail: 'Antes de la entrega tiene que estar emitido el documento del expediente.',
         });
       }
     }
@@ -1393,6 +1757,41 @@ export class SolicitudesService {
         });
       }
     }
+  }
+
+  async estadisticas(id: string, actor: Actor) {
+    this.exigirPersonal(actor);
+    const actual = await this.cargarLegible(id, actor);
+    return this.estadisticasDe(this.prisma, id, actual.productos);
+  }
+
+  private async estadisticasDe(
+    tx: Prisma.TransactionClient | PrismaService,
+    solicitudId: string,
+    productos: Array<{ id: string; nombre: string; unidadMedida: string | null }>,
+  ) {
+    const precios = await tx.precioConsultado.findMany({
+      where: { consulta: { solicitudId } },
+      select: {
+        precio: true,
+        moneda: true,
+        unidadMedida: true,
+        esAtipico: true,
+        productoSolicitudId: true,
+        consulta: { select: { fuente: { select: { nombre: true } } } },
+      },
+    });
+    return medirExpediente(
+      productos,
+      precios.map((precio) => ({
+        productoSolicitudId: precio.productoSolicitudId,
+        precio: precio.precio.toString(),
+        moneda: precio.moneda,
+        unidadMedida: precio.unidadMedida,
+        esAtipico: precio.esAtipico,
+        fuente: precio.consulta.fuente.nombre,
+      })),
+    );
   }
 
   private async textoBorrador(
@@ -1411,24 +1810,24 @@ export class SolicitudesService {
       }>;
     },
     dto: CrearInformeDto,
+    elaboradoPor: string,
   ) {
-    const [validaciones, consultas] = await Promise.all([
-      tx.validacionAnalisis.findMany({
-        where: { solicitudId, confirmada: true },
-        select: { productoSolicitudId: true, precioAdoptado: true, moneda: true },
-      }),
-      tx.consultaMercado.count({ where: { solicitudId } }),
-    ]);
+    const validaciones = await tx.validacionAnalisis.findMany({
+      where: { solicitudId, confirmada: true },
+      select: { productoSolicitudId: true, precioAdoptado: true, moneda: true },
+    });
     const porProducto = new Map(
       validaciones.map((validacion) => [validacion.productoSolicitudId, validacion]),
     );
+    const estadisticas = await this.estadisticasDe(tx, solicitudId, actual.productos);
     return borradorInforme({
-      tipo: dto.tipo,
       codigo: actual.codigo,
       titulo: actual.titulo,
       institucion: actual.institucionSolicitante,
       destinatario: dto.destinatario,
-      consultas,
+      elaboradoPor,
+      fecha: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guatemala' }),
+      estadisticas,
       productos: actual.productos.map((producto) => {
         const validacion = porProducto.get(producto.id);
         return {

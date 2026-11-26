@@ -72,9 +72,11 @@ describe('RegistroService', () => {
     expect(data.estado).toBeUndefined();
     expect(data.tokensVerificacion.create.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(mail.send).toHaveBeenCalledOnce();
-    const { text } = mail.send.mock.calls[0][0];
+    const { text, html } = mail.send.mock.calls[0][0];
     const token = new URL(text.match(/https:\/\/\S+/)![0]).searchParams.get('token')!;
     expect(hashToken(token)).toBe(data.tokensVerificacion.create.tokenHash);
+    expect(html).toContain('Verificar mi correo');
+    expect(html).toContain(token);
   });
 
   it('no revela que el correo ya existe: no crea ni envía nada', async () => {

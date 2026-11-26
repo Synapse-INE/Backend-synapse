@@ -45,6 +45,7 @@ export class SolicitantesController {
               nit: '1234567-8',
             },
             solicitadoEn: '2026-11-24T20:00:00.000Z',
+            correoVerificadoEn: '2026-11-24T19:45:00.000Z',
           },
         ],
       },

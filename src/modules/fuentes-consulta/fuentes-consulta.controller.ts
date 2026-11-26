@@ -29,7 +29,8 @@ export class FuentesConsultaController {
   constructor(private readonly fuentes: FuentesConsultaService) {}
 
   @Get()
-  @ApiProtegido({ csrf: false, roles: 'TRABAJADOR_INE, ADMIN' })
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
+  @ApiProtegido({ csrf: false, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Listar las fuentes habilitables de Guatemala',
     description:

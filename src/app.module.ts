@@ -18,6 +18,8 @@ import { FuentesConsultaModule } from './modules/fuentes-consulta/fuentes-consul
 import { NotificacionesModule } from './modules/notificaciones/notificaciones.module.js';
 import { PersonalIneModule } from './modules/personal-ine/personal-ine.module.js';
 import { ReferenciasINEModule } from './modules/referencias-ine/referencias-ine.module.js';
+import { AdministracionModule } from './modules/administracion/administracion.module.js';
+import { ProveedoresModule } from './modules/proveedores/proveedores.module.js';
 import { DatabaseModule } from './infrastructure/database/database.module.js';
 
 @Module({
@@ -63,6 +65,7 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
           .integer()
           .min(1_048_576)
           .default(52_428_800),
+        ALMACENAMIENTO_DIR: Joi.string().allow('').optional(),
       }),
     }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
@@ -73,6 +76,7 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
     InvitacionesModule,
     RegistroModule,
     SolicitantesModule,
+    AdministracionModule,
     SolicitudesModule,
     FuentesConsultaModule,
     NotificacionesModule,
@@ -81,6 +85,7 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
     AdjuntosModule,
     IntegracionesModule,
     ReferenciasINEModule,
+    ProveedoresModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

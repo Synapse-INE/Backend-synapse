@@ -5,16 +5,16 @@ import { ApiProtegido } from '../../infrastructure/openapi/decoradores.js';
 import { PersonalIneService } from './personal-ine.service.js';
 
 @Controller('personal-ine')
-@Roles('TRABAJADOR_INE', 'ADMIN')
+@Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
 @ApiTags('Personal del INE')
 export class PersonalIneController {
   constructor(private readonly personal: PersonalIneService) {}
 
   @Get()
-  @ApiProtegido({ csrf: false, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: false, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
-    summary: 'Listar el personal activo que puede recibir un expediente',
-    description: 'Devuelve identificador y nombre. Sirve para elegir responsable. No incluye correo.',
+    summary: 'Listar los trabajadores activos que pueden recibir un expediente',
+    description: 'Devuelve identificador y nombre de quienes tienen el rol `TRABAJADOR_INE`. Sirve para que el jefe elija responsable. No incluye correo.',
   })
   @ApiOkResponse({
     schema: {

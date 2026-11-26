@@ -17,7 +17,7 @@ import { ListarNotificacionesDto } from './notificaciones.dto.js';
 import { NotificacionesService } from './notificaciones.service.js';
 
 @Controller('notificaciones')
-@Roles('SOLICITANTE', 'TRABAJADOR_INE', 'ADMIN')
+@Roles('SOLICITANTE', 'JEFE', 'TRABAJADOR_INE', 'ADMIN')
 @ApiTags('Avisos')
 export class NotificacionesController {
   constructor(private readonly notificaciones: NotificacionesService) {}

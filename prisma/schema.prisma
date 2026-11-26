@@ -78,6 +78,8 @@ enum EstadoSolicitud {
   EN_INVESTIGACION
   EN_INFORME
   EN_ENTREGA
+  EN_ESPERA
+  CANCELADA
 
   @@map("estado_solicitud")
 }
@@ -233,6 +235,8 @@ model Usuario {
   entregasRegistradas     EntregaSolicitud[]        @relation("EntregaRegistradaPor")
   notificaciones          Notificacion[]
   adjuntosSubidos         SolicitudAdjunto[]        @relation("AdjuntoSubidoPor")
+  colaboracionesSolicitud SolicitudColaborador[]    @relation("ColaboradorSolicitud")
+  colaboracionesAgregadas SolicitudColaborador[]    @relation("ColaboradorAgregadoPor")
   requisitosAprobados     RequisitoSolicitud[]      @relation("RequisitoAprobadoPor")
   justificacionesCreadas  JustificacionSolicitud[]  @relation("JustificacionCreador")
   proveedoresConfirmados  ProveedorSolicitud[]      @relation("ProveedorSolicitudConfirmador")
@@ -591,6 +595,7 @@ model SolicitudPrecio {
   codigo                   String              @unique @db.VarChar(20)
   creadaPorId              String              @map("creada_por_id") @db.Uuid
   asignadaAId              String?             @map("asignada_a_id") @db.Uuid
+  estadoAlPausar           EstadoSolicitud?    @map("estado_al_pausar")
   enviadaEn                DateTime?           @map("enviada_en") @db.Timestamptz(6)
   createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -606,6 +611,7 @@ model SolicitudPrecio {
   entregas             EntregaSolicitud[]
   notificaciones       Notificacion[]
   adjuntos             SolicitudAdjunto[]
+  colaboradores        SolicitudColaborador[]
   requisitos           RequisitoSolicitud[]
   productos            ProductoSolicitud[]
   proveedoresSugeridos ProveedorSolicitud[]
@@ -689,6 +695,7 @@ model ConsultaMercado {
   fuente        FuenteConsulta     @relation(fields: [fuenteId], references: [id], onDelete: Restrict)
   registradaPor Usuario            @relation("ConsultaRegistradaPor", fields: [registradaPorId], references: [id], onDelete: Restrict)
   precios       PrecioConsultado[]
+  adjuntos      SolicitudAdjunto[]
 
   @@index([solicitudId, fechaConsulta])
   @@map("consultas_mercado")
@@ -747,6 +754,7 @@ model InformeSolicitud {
   version        Int
   destinatario   String                 @db.VarChar(240)
   resumen        String                 @db.Text
+  estadisticas   Json?
   estado         EstadoInformeSolicitud @default(BORRADOR)
   elaboradoPorId String                 @map("elaborado_por_id") @db.Uuid
   emitidoEn      DateTime?              @map("emitido_en") @db.Timestamptz(6)
@@ -776,6 +784,7 @@ model EntregaSolicitud {
   solicitud     SolicitudPrecio   @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
   informe       InformeSolicitud? @relation(fields: [informeId], references: [id], onDelete: Restrict)
   registradaPor Usuario           @relation("EntregaRegistradaPor", fields: [registradaPorId], references: [id], onDelete: Restrict)
+  adjuntos      SolicitudAdjunto[]
 
   @@index([solicitudId, fechaEntrega])
   @@index([informeId])
@@ -811,6 +820,8 @@ model SolicitudAdjunto {
   productoSolicitudId String?              @map("producto_solicitud_id") @db.Uuid
   cotizacionId        String?              @map("cotizacion_id") @db.Uuid
   justificacionId     String?              @map("justificacion_id") @db.Uuid
+  consultaId          String?              @map("consulta_id") @db.Uuid
+  entregaId           String?              @map("entrega_id") @db.Uuid
   createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
   solicitud         SolicitudPrecio         @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
@@ -818,12 +829,31 @@ model SolicitudAdjunto {
   productoSolicitud ProductoSolicitud?      @relation(fields: [productoSolicitudId], references: [id], onDelete: SetNull)
   cotizacion        CotizacionImportacion?  @relation(fields: [cotizacionId], references: [id], onDelete: SetNull)
   justificacion     JustificacionSolicitud? @relation(fields: [justificacionId], references: [id], onDelete: SetNull)
+  consulta          ConsultaMercado?        @relation(fields: [consultaId], references: [id], onDelete: Cascade)
+  entrega           EntregaSolicitud?       @relation(fields: [entregaId], references: [id], onDelete: Cascade)
 
   @@index([solicitudId])
+  @@index([consultaId])
+  @@index([entregaId])
   @@index([productoSolicitudId])
   @@index([cotizacionId])
   @@index([justificacionId])
   @@map("solicitudes_adjuntos")
+}
+
+model SolicitudColaborador {
+  solicitudId   String   @map("solicitud_id") @db.Uuid
+  usuarioId     String   @map("usuario_id") @db.Uuid
+  agregadoPorId String   @map("agregado_por_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  solicitud   SolicitudPrecio @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  usuario     Usuario         @relation("ColaboradorSolicitud", fields: [usuarioId], references: [id], onDelete: Cascade)
+  agregadoPor Usuario         @relation("ColaboradorAgregadoPor", fields: [agregadoPorId], references: [id], onDelete: Restrict)
+
+  @@id([solicitudId, usuarioId])
+  @@index([usuarioId])
+  @@map("solicitud_colaboradores")
 }
 
 model RequisitoSolicitud {

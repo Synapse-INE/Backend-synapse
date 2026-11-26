@@ -56,7 +56,7 @@ La API utiliza el prefijo `/api/v1` y actualmente ofrece:
 | `POST`  | `/notificaciones/:id/leer`                 | Marca un aviso propio como leído.                                  | Sesión y CSRF                        |
 | `POST`  | `/notificaciones/leer-todas`               | Marca como leídos los avisos propios pendientes.                   | Sesión y CSRF                        |
 
-Hay 37 endpoints, todos descritos en el documento OpenAPI (ver más abajo). Lo que falta para terminar el backend está en [docs/backlog-backend.md](./docs/backlog-backend.md).
+Hay 48 endpoints, todos descritos en el documento OpenAPI (ver más abajo). Lo que falta para terminar el backend está en [docs/backlog-backend.md](./docs/backlog-backend.md).
 
 La autenticación utiliza sesiones opacas almacenadas en PostgreSQL. El navegador recibe el token de sesión mediante una cookie `HttpOnly`; la base de datos conserva su hash, no el valor original. Las contraseñas se verifican con Argon2id. Las solicitudes autenticadas que modifican estado requieren protección CSRF.
 
@@ -112,22 +112,29 @@ Un solicitante no puede iniciar sesión hasta verificar su correo **y** ser apro
 | `PATCH /api/v1/solicitudes/:id` | `SOLICITANTE` autor | Edita un `BORRADOR` o un expediente en `PENDIENTE_SUBSANACION`; si se envía `productos`, reemplaza la lista. |
 | `POST /api/v1/solicitudes/:id/enviar` | `SOLICITANTE` autor | Valida la cabecera y cada producto (especificaciones, unidad y cantidad > 0). Si falta algo responde 422 `SOLICITUD_INCOMPLETA` con `errors[{field,message}]`. |
 | `POST /api/v1/solicitudes/:id/estado` | `TRABAJADOR_INE`, `ADMIN` | `RECIBIDA → EN_REVISION → EN_INVESTIGACION → EN_ANALISIS → EN_INFORME → EN_ENTREGA → COMPLETADA`, y `RECHAZADA` desde esas etapas. |
-| `POST /api/v1/solicitudes/:id/asignar` | `TRABAJADOR_INE`, `ADMIN` | Asigna un responsable activo del INE. No cambia el estado. |
+| `POST /api/v1/solicitudes/:id/asignar` | `JEFE`, `ADMIN` | El jefe asigna el expediente a un trabajador activo. No cambia el estado. |
 | `POST /api/v1/solicitudes/:id/comentarios` | Roles de trabajo | Observación visible. Solo el INE escribe notas internas o devuelve (`devolver: true` → `PENDIENTE_SUBSANACION`). |
 | `POST /api/v1/solicitudes/:id/reenviar` | `SOLICITANTE` autor | Vuelve a validar y pasa de `PENDIENTE_SUBSANACION` a `RECIBIDA`. Conserva responsable y fecha del primer envío. |
 | `POST /api/v1/solicitudes/:id/consultas` | `TRABAJADOR_INE`, `ADMIN` | Boleta en `EN_INVESTIGACION` o `EN_ANALISIS`. La fuente tiene que estar activa. El precio lo escribe la persona. |
 | `PATCH /api/v1/solicitudes/:id/consultas/:consultaId` | `TRABAJADOR_INE`, `ADMIN` | Corrige la boleta. El valor anterior queda en el historial y no modifica el precio ya confirmado. |
-| `GET /api/v1/personal-ine` | `TRABAJADOR_INE`, `ADMIN` | Identificador y nombre del personal activo, para elegir responsable. |
+| `GET /api/v1/personal-ine` | `JEFE`, `TRABAJADOR_INE`, `ADMIN` | Identificador y nombre de los trabajadores activos, para que el jefe elija responsable. |
 | `GET /api/v1/notificaciones` | Roles de trabajo | Avisos propios. Quien hizo la acción no se avisa. Una nota interna no llega a la entidad. |
 | `POST /api/v1/solicitudes/:id/validaciones` | `TRABAJADOR_INE`, `ADMIN` | Precio oficial del analista en `EN_ANALISIS`. `confirmar: true` lo deja vigente. No hay fórmula. |
 | `POST /api/v1/solicitudes/:id/informes` y `.../emitir` | `TRABAJADOR_INE`, `ADMIN` | Borrador y emisión humana de informe técnico u oficio. El destinatario es texto. |
-| `POST /api/v1/solicitudes/:id/entregas` | `TRABAJADOR_INE`, `ADMIN` | Entrega `DIGITAL`, `FISICA` o `CD`, con destinatario y constancia textual. |
+| `POST /api/v1/solicitudes/:id/entregas` | `TRABAJADOR_INE`, `ADMIN` | Entrega `DIGITAL`, `FISICA` o `CD`, con destinatario y constancia textual. El PDF de constancia es opcional. |
+| `POST /api/v1/solicitudes/:id/pausar` · `/reanudar` | `TRABAJADOR_INE`, `ADMIN` | Pausa interna `EN_ESPERA`. Reanudar vuelve al estado anterior. No es una devolución a la entidad. |
+| `POST /api/v1/solicitudes/:id/cancelar` | `SOLICITANTE` autor | Anula un expediente enviado que todavía no está en entrega ni cerrado. |
+| `DELETE /api/v1/solicitudes/:id` | `SOLICITANTE` autor | Elimina un `BORRADOR`. Un expediente enviado no se borra. |
+| `POST` · `DELETE /api/v1/solicitudes/:id/colaboradores` | `JEFE`, `ADMIN` | El jefe suma un trabajador que trabaja el expediente junto al responsable. |
+| `POST` · `GET` · `DELETE /api/v1/solicitudes/:id/adjuntos` | Según el archivo | PDF de hasta 10 MB. El de la solicitud solo en `BORRADOR`. La evidencia y la constancia no bloquean el avance. |
 | `GET /api/v1/referencias-ine?texto=` | `TRABAJADOR_INE`, `ADMIN` | Búsqueda del catálogo ya importado. No adopta el precio. |
 | `GET`/`POST`/`PATCH /api/v1/fuentes-consulta` | `TRABAJADOR_INE`, `ADMIN` | Registro de fuentes. El dominio, si existe, termina en `.gt`. |
 
-Cada solicitud nace con código `PR-año-######`. El detalle incluye comentarios (las notas internas solo las ve el INE) e historial; ese historial no se borra al corregir ni al reenviar. Para pasar a informe, cada producto necesita un precio confirmado por el analista. Para pasar a entrega, tienen que estar emitidos el informe técnico y el oficio. Para completar, hace falta al menos una entrega. La entidad ve los documentos emitidos y las entregas cuando el expediente queda `COMPLETADA`. Un borrador puede estar incompleto; solo al enviar o reenviar se exigen modalidad, unidad ejecutora, fecha del formulario, enlace, autoridad y productos. Las cantidades y los precios viajan como cadena decimal y la fecha como `YYYY-MM-DD`.
+Cada solicitud enviada tiene un tiempo de atención de 15 días corridos, contados desde el envío en hora de Guatemala. No es una meta ni dispara recordatorios: al cumplirse queda vencida y el expediente se puede seguir trabajando. Los días en que la entidad corrige no consumen ese tiempo. Una pausa interna del INE sí cuenta, porque quien solicitó sigue esperando. La bandeja del INE muestra primero lo que lleva más tiempo esperando. El campo `atencion` trae la fecha límite, los días restantes y la situación.
 
-Supuestos de esta etapa, porque el INE no confirmó plantilla ni fórmula: el resumen del informe es un borrador editable, no un formato oficial; la evidencia y la constancia son texto hasta que exista la carga de archivos; marcar un atípico es una decisión de la persona; el destinatario no queda fijo en DIGAE ni en DGAE. La carga de adjuntos, las notificaciones, los formularios S.11, S.21 y S.22 y las estadísticas siguen pendientes.
+Cada solicitud nace con código `PR-año-######`. El detalle incluye comentarios (las notas internas solo las ve el INE) e historial; ese historial no se borra al corregir ni al reenviar. Para pasar a informe, cada producto necesita un precio confirmado por el analista. Para pasar a entrega, basta con emitir el documento del expediente: reúne el informe técnico, el oficio y la estadística. La gráfica se congela en ese momento. Para completar, hace falta al menos una entrega. La entidad ve los documentos emitidos y las entregas cuando el expediente queda `COMPLETADA`. Un borrador puede estar incompleto; solo al enviar o reenviar se exigen modalidad, unidad ejecutora, fecha del formulario, enlace, autoridad y productos. Las cantidades y los precios viajan como cadena decimal y la fecha como `YYYY-MM-DD`.
+
+Supuestos de esta etapa, porque el INE no confirmó plantilla ni fórmula: el resumen del informe es un borrador editable, no un formato oficial; la evidencia de la boleta y la constancia en PDF se pueden adjuntar, pero su ausencia no frena el expediente; marcar un atípico es una decisión de la persona; el destinatario no queda fijo en DIGAE ni en DGAE. Los formularios S.11, S.21 y S.22 siguen pendientes.
 
 ### Errores y auditoría de acceso
 
@@ -210,7 +217,7 @@ Swagger está deshabilitado por defecto. Para habilitarlo en desarrollo, estable
 - Interfaz Swagger UI: `http://localhost:3000/api/v1/docs`
 - Especificación OpenAPI JSON: `http://localhost:3000/api/v1/openapi.json`
 
-La especificación describe los 37 endpoints implementados (salud, autenticación, registro e invitaciones, revisión de solicitantes, solicitudes S.00, fuentes de consulta, catálogo interno, avisos y personal del INE), sus esquemas de entrada generados desde los DTO, los códigos de error `application/problem+json` y los dos mecanismos de seguridad: la cookie de sesión y el encabezado `x-csrf-token`. Puede importarse en Postman desde la URL JSON. Una prueba e2e (`test/openapi.e2e-spec.ts`) falla si un endpoint nuevo no se documenta o si se documenta uno que no existe. En producción, mantén `SWAGGER_ENABLED=false` salvo que la documentación esté protegida.
+La especificación describe los 48 endpoints implementados (salud, autenticación, registro e invitaciones, revisión de solicitantes, solicitudes S.00, fuentes de consulta, catálogo interno, avisos y personal del INE), sus esquemas de entrada generados desde los DTO, los códigos de error `application/problem+json` y los dos mecanismos de seguridad: la cookie de sesión y el encabezado `x-csrf-token`. Puede importarse en Postman desde la URL JSON. Una prueba e2e (`test/openapi.e2e-spec.ts`) falla si un endpoint nuevo no se documenta o si se documenta uno que no existe. En producción, mantén `SWAGGER_ENABLED=false` salvo que la documentación esté protegida.
 
 ## Pruebas y calidad
 

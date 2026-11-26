@@ -133,12 +133,16 @@ describe('AuthService', () => {
       roles: [{ rol: { codigo: 'SOLICITANTE' } }],
     });
 
-    await expect(
-      authService.signIn(
-        'requester@example.org',
-        'correct horse battery staple',
-      ),
-    ).rejects.toThrow('Credenciales no válidas.');
+    const error = await authService
+      .signIn('requester@example.org', 'correct horse battery staple')
+      .catch((fallo: unknown) => fallo);
+
+    expect(error).toBeInstanceOf(UnauthorizedException);
+    expect((error as UnauthorizedException).getResponse()).toMatchObject({
+      code: 'CUENTA_PENDIENTE_APROBACION',
+      detail:
+        'Tu correo ya está verificado. Un administrador del INE todavía tiene que aprobar la cuenta.',
+    });
     expect(prisma.sesionUsuario.create).not.toHaveBeenCalled();
   });
 

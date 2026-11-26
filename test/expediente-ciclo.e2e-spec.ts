@@ -14,6 +14,7 @@ loadEnv({ path: resolve(import.meta.dirname, '../.env') });
 const FUENTE_CATALOGO = '10000000-0000-4000-8000-0000000000f1';
 const ROL_SOLICITANTE = '10000000-0000-4000-8000-000000000004';
 const ROL_TRABAJADOR = '10000000-0000-4000-8000-000000000002';
+const ROL_JEFE = '10000000-0000-4000-8000-000000000005';
 
 type Actor = AuthenticatedRequest['auth'];
 
@@ -71,6 +72,7 @@ describe('Ciclo completo de un expediente', () => {
   let solicitante: Actor;
   let jefe: Actor;
   let analista: Actor;
+  let apoyo: Actor;
 
   beforeAll(async () => {
     prisma = new PrismaService({
@@ -95,8 +97,9 @@ describe('Ciclo completo de un expediente', () => {
     const cuentas = await Promise.all(
       [
         ['solicitante', 'SOLICITANTE', ROL_SOLICITANTE],
-        ['jefe', 'TRABAJADOR_INE', ROL_TRABAJADOR],
+        ['jefe', 'JEFE', ROL_JEFE],
         ['analista', 'TRABAJADOR_INE', ROL_TRABAJADOR],
+        ['apoyo', 'TRABAJADOR_INE', ROL_TRABAJADOR],
       ].map(async ([papel, , rolId]) => {
         const usuario = await prisma.usuario.create({
           data: {
@@ -122,8 +125,9 @@ describe('Ciclo completo de un expediente', () => {
     });
 
     solicitante = actor(cuentas[0], ['SOLICITANTE'], institucion.id);
-    jefe = actor(cuentas[1], ['TRABAJADOR_INE'], null);
+    jefe = actor(cuentas[1], ['JEFE'], null);
     analista = actor(cuentas[2], ['TRABAJADOR_INE'], null);
+    apoyo = actor(cuentas[3], ['TRABAJADOR_INE'], null);
   }, 30_000);
 
   afterAll(async () => {
@@ -184,8 +188,11 @@ describe('Ciclo completo de un expediente', () => {
     expect(guantes && jeringa).toBeTruthy();
 
     await solicitudes.enviar(creada.id, solicitante);
-    await solicitudes.cambiarEstado(creada.id, { estado: 'EN_REVISION' }, jefe);
+    await expect(
+      solicitudes.cambiarEstado(creada.id, { estado: 'EN_REVISION' }, analista),
+    ).rejects.toMatchObject({ response: { code: 'EXPEDIENTE_SIN_ASIGNAR' } });
     await solicitudes.asignar(creada.id, { usuarioId: analista.usuario.id }, jefe);
+    await solicitudes.cambiarEstado(creada.id, { estado: 'EN_REVISION' }, analista);
     await solicitudes.comentar(
       creada.id,
       { contenido: 'Nota de trabajo que la entidad no debe recibir.', esInterno: true },
@@ -204,7 +211,16 @@ describe('Ciclo completo de un expediente', () => {
     const reenviada = await solicitudes.reenviar(creada.id, solicitante);
     expect(reenviada.asignadaAId).toBe(analista.usuario.id);
 
-    await solicitudes.cambiarEstado(creada.id, { estado: 'EN_REVISION' }, jefe);
+    await expect(
+      solicitudes.cambiarEstado(creada.id, { estado: 'EN_REVISION' }, jefe),
+    ).rejects.toMatchObject({ response: { code: 'NO_ES_RESPONSABLE' } });
+    const enEspera = await solicitudes.pausar(creada.id, analista);
+    expect(enEspera.estado).toBe('EN_ESPERA');
+    const reanudada = await solicitudes.reanudar(creada.id, analista);
+    expect(reanudada.estado).toBe('RECIBIDA');
+    await solicitudes.agregarColaborador(creada.id, { usuarioId: apoyo.usuario.id }, jefe);
+
+    await solicitudes.cambiarEstado(creada.id, { estado: 'EN_REVISION' }, analista);
     await solicitudes.cambiarEstado(creada.id, { estado: 'EN_INVESTIGACION' }, analista);
     const conBoleta = await solicitudes.registrarConsulta(
       creada.id,
@@ -270,7 +286,7 @@ describe('Ciclo completo de un expediente', () => {
       analista,
     );
     const tecnico = conInforme.informes.find((informe) => informe.tipo === 'INFORME_TECNICO');
-    expect(tecnico?.resumen).toContain('No es la plantilla oficial del INE');
+    expect(tecnico?.resumen).toContain('Informe técnico');
     expect(tecnico?.resumen).toMatch(/GTQ 21(\.0+)?/);
     await solicitudes.emitirInforme(creada.id, tecnico!.id, analista);
     const conOficio = await solicitudes.crearInforme(
@@ -281,7 +297,7 @@ describe('Ciclo completo de un expediente', () => {
     const oficio = conOficio.informes.find((informe) => informe.tipo === 'OFICIO');
     await solicitudes.emitirInforme(creada.id, oficio!.id, analista);
 
-    await solicitudes.cambiarEstado(creada.id, { estado: 'EN_ENTREGA' }, jefe);
+    await solicitudes.cambiarEstado(creada.id, { estado: 'EN_ENTREGA' }, analista);
     await solicitudes.registrarEntrega(
       creada.id,
       {
@@ -291,9 +307,9 @@ describe('Ciclo completo de un expediente', () => {
         fechaEntrega: '2026-11-25',
         constancia: 'Acuse de la prueba de ciclo.',
       },
-      jefe,
+      analista,
     );
-    await solicitudes.cambiarEstado(creada.id, { estado: 'COMPLETADA' }, jefe);
+    await solicitudes.cambiarEstado(creada.id, { estado: 'COMPLETADA' }, analista);
 
     const paraLaEntidad = await solicitudes.obtener(creada.id, solicitante);
     expect(paraLaEntidad.estado).toBe('COMPLETADA');
@@ -334,6 +350,7 @@ describe('Ciclo completo de un expediente', () => {
     const personas = await personal.listar();
     const identificadores = personas.map((persona) => persona.id);
     expect(identificadores).toContain(analista.usuario.id);
+    expect(identificadores).not.toContain(jefe.usuario.id);
     expect(identificadores).not.toContain(solicitante.usuario.id);
     expect(personas.every((persona) => !('email' in persona))).toBe(true);
   }, 30_000);

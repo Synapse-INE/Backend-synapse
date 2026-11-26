@@ -33,6 +33,7 @@ export class AuthService {
         email: true,
         passwordHash: true,
         nombre: true,
+        proveedorId: true,
         estado: true,
         emailVerificadoEn: true,
         roles: {
@@ -48,19 +49,20 @@ export class AuthService {
       password,
     );
 
-    if (
-      !user ||
-      !passwordMatches ||
-      user.estado !== 'ACTIVO' ||
-      !user.emailVerificadoEn
-    ) {
-      await this.auditar({
-        actorId: user?.id ?? null,
-        accion: 'INICIO_SESION_FALLIDO',
-        ip: contexto.ip,
-        metadatos: { emailHash: hashToken(normalizedEmail) },
+    if (!user || !passwordMatches) {
+      return this.rechazar(user?.id ?? null, contexto, normalizedEmail);
+    }
+
+    if (user.estado === 'PENDIENTE_APROBACION' && user.emailVerificadoEn) {
+      return this.rechazar(user.id, contexto, normalizedEmail, {
+        code: 'CUENTA_PENDIENTE_APROBACION',
+        detail:
+          'Tu correo ya está verificado. Un administrador del INE todavía tiene que aprobar la cuenta.',
       });
-      throw new UnauthorizedException('Credenciales no válidas.');
+    }
+
+    if (user.estado !== 'ACTIVO' || !user.emailVerificadoEn) {
+      return this.rechazar(user.id, contexto, normalizedEmail);
     }
 
     const sessionToken = randomBytes(32).toString('base64url');
@@ -125,6 +127,21 @@ export class AuthService {
     });
   }
 
+  private async rechazar(
+    actorId: string | null,
+    contexto: ContextoSolicitud,
+    email: string,
+    respuesta: string | { code: string; detail: string } = 'Credenciales no válidas.',
+  ): Promise<never> {
+    await this.auditar({
+      actorId,
+      accion: 'INICIO_SESION_FALLIDO',
+      ip: contexto.ip,
+      metadatos: { emailHash: hashToken(email) },
+    });
+    throw new UnauthorizedException(respuesta);
+  }
+
   // La auditoría de un intento fallido o de un cierre no debe impedir la respuesta.
   private async auditar(evento: {
     actorId: string | null;
@@ -161,6 +178,7 @@ function toAuthenticatedUser(user: {
   id: string;
   email: string;
   nombre: string;
+  proveedorId?: string | null;
   roles: { rol: { codigo: string } }[];
 }): AuthenticatedUser {
   return {
@@ -168,5 +186,6 @@ function toAuthenticatedUser(user: {
     email: user.email,
     nombre: user.nombre,
     roles: user.roles.map(({ rol }) => rol.codigo),
+    proveedorId: user.proveedorId ?? null,
   };
 }
