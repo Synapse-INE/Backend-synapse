@@ -2,7 +2,7 @@
 
 ## Alcance
 
-El backend expone hoy 93 operaciones, descritas en OpenAPI; el estado de cada una está en [estado-y-siguientes-pasos.md](./estado-y-siguientes-pasos.md). Los escenarios siguientes son los criterios con los que se revisa cada endpoint y se convierten en pruebas automatizadas. Los casos que dependen de reglas de negocio deben confirmarse antes de convertirlos en contratos definitivos.
+El backend expone hoy 96 operaciones, descritas en OpenAPI; el estado de cada una está en [estado-y-siguientes-pasos.md](./estado-y-siguientes-pasos.md). Los escenarios siguientes son los criterios con los que se revisa cada endpoint y se convierten en pruebas automatizadas. Los casos que dependen de reglas de negocio deben confirmarse antes de convertirlos en contratos definitivos.
 
 El inventario técnico de la superficie actual está en [API & Service Communication Contracts](../.github/modernize/assessment/engines/facts/api-service-contracts.md).
 

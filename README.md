@@ -56,7 +56,7 @@ La API utiliza el prefijo `/api/v1` y actualmente ofrece:
 | `POST`  | `/notificaciones/:id/leer`                 | Marca un aviso propio como leído.                                  | Sesión y CSRF                        |
 | `POST`  | `/notificaciones/leer-todas`               | Marca como leídos los avisos propios pendientes.                   | Sesión y CSRF                        |
 
-Esta tabla lista los endpoints principales; el contrato completo son **93 operaciones**, todas descritas en el documento OpenAPI (ver más abajo), incluidas las de adjuntos, colaboradores, pausa y cancelación de solicitudes. Lo que queda para cerrar el backend está en [docs/backlog-backend.md](./docs/backlog-backend.md).
+Esta tabla lista los endpoints principales; el contrato completo son **96 operaciones**, todas descritas en el documento OpenAPI (ver más abajo), incluidas las de adjuntos, colaboradores, pausa y cancelación de solicitudes. Lo que queda para cerrar el backend está en [docs/backlog-backend.md](./docs/backlog-backend.md).
 
 Endpoints de cuentas, administración, formularios y catálogo añadidos al cerrar el backend:
 
@@ -82,6 +82,16 @@ Endpoints de cuentas, administración, formularios y catálogo añadidos al cerr
 | `GET`    | `/importaciones-ine/:id/filas`                                    | Filas de una importación, p. ej. `?estado=REVISAR`.                      | `ADMIN`                                 |
 | `POST`   | `/importaciones-ine/:id/reprocesar`                               | Reaplica los alias confirmados a las filas almacenadas.                  | `ADMIN`, sesión y CSRF                  |
 | `GET/PATCH` | `/alias-modalidad` y `/alias-modalidad/:id`                    | Lista y confirma o descarta alias de modalidad pendientes.               | `ADMIN`, sesión y CSRF                  |
+
+Exportación del catálogo de precios (`JEFE`, `TRABAJADOR_INE`, `ADMIN`; sesión, sin CSRF por ser `GET`):
+
+| Método | Ruta                              | Descripción                                                                                   |
+| ------ | --------------------------------- | --------------------------------------------------------------------------------------------- |
+| `GET`  | `/exportaciones/precios/datos`    | JSON con filas y columnas para que el frontend genere su propio PDF (máx. 20 000 filas).       |
+| `GET`  | `/exportaciones/precios/excel`    | Descarga `.xlsx` con hoja `Precios` y hoja `Información` (máx. 50 000 filas).                  |
+| `GET`  | `/exportaciones/precios/pdf`      | Descarga PDF horizontal con filtros y paginación (máx. 3 000 filas).                           |
+
+Filtros comunes (query): `texto`, `categoria`, `producto`, `nog`, `fecha` (día exacto, no se combina con el rango), `desde`, `hasta` (`AAAA-MM-DD`) y `soloVigentes=true`. Solo se exportan referencias con precio. Si la consulta supera el máximo del formato responde 422 `EXPORTACION_DEMASIADO_GRANDE` en lugar de truncar en silencio. Los precios van como cadena decimal con tres decimales (en Excel, como número). Las celdas de texto que empiezan con `=`, `+`, `-` o `@` se neutralizan contra la inyección de fórmulas. Cada exportación queda en la auditoría (`EXPORTACION_PRECIOS`) con formato, número de filas, filtros e IP.
 
 Reglas de los formularios: solo el autor modifica requisitos, empresas, representantes, cotizaciones y justificaciones, y solo con la solicitud en borrador o devuelta; las decisiones son del personal del INE. Al **enviar**, en Subasta Electrónica Inversa cada producto necesita al menos tres empresas propuestas no descartadas, y en Bienes y Suministros Importados hacen falta representante titular y suplente y tres cotizaciones por producto, salvo una justificación `COTIZACIONES_INSUFICIENTES`. Los importes viajan como cadenas decimales. El mínimo de tres por producto es una decisión asumida que el INE debe confirmar.
 
@@ -253,7 +263,7 @@ Swagger está deshabilitado por defecto. Para habilitarlo en desarrollo, estable
 - Interfaz Swagger UI: `http://localhost:3000/api/v1/docs`
 - Especificación OpenAPI JSON: `http://localhost:3000/api/v1/openapi.json`
 
-La especificación describe las 93 operaciones implementadas (salud, autenticación y recuperación de cuenta, registro e invitaciones, administración, solicitudes y sus formularios, fuentes de consulta, catálogo interno y su revisión, avisos, personal del INE y catálogo de proveedores), sus esquemas de entrada generados desde los DTO, los códigos de error `application/problem+json` y los dos mecanismos de seguridad: la cookie de sesión y el encabezado `x-csrf-token`. Puede importarse en Postman desde la URL JSON. Una prueba e2e (`test/openapi.e2e-spec.ts`) falla si un endpoint nuevo no se documenta o si se documenta uno que no existe. En producción, mantén `SWAGGER_ENABLED=false` salvo que la documentación esté protegida.
+La especificación describe las 96 operaciones implementadas (salud, autenticación y recuperación de cuenta, registro e invitaciones, administración, solicitudes y sus formularios, fuentes de consulta, catálogo interno y su revisión, avisos, personal del INE y catálogo de proveedores), sus esquemas de entrada generados desde los DTO, los códigos de error `application/problem+json` y los dos mecanismos de seguridad: la cookie de sesión y el encabezado `x-csrf-token`. Puede importarse en Postman desde la URL JSON. Una prueba e2e (`test/openapi.e2e-spec.ts`) falla si un endpoint nuevo no se documenta o si se documenta uno que no existe. En producción, mantén `SWAGGER_ENABLED=false` salvo que la documentación esté protegida.
 
 ## Pruebas y calidad
 

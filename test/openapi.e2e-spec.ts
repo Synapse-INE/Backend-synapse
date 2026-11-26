@@ -138,6 +138,9 @@ describe('Documento OpenAPI', () => {
     ['post', '/api/v1/importaciones-ine/{id}/reprocesar', { sesion: true, csrf: true }],
     ['get', '/api/v1/alias-modalidad', { sesion: true, csrf: false }],
     ['patch', '/api/v1/alias-modalidad/{id}', { sesion: true, csrf: true }],
+    ['get', '/api/v1/exportaciones/precios/datos', { sesion: true, csrf: false }],
+    ['get', '/api/v1/exportaciones/precios/excel', { sesion: true, csrf: false }],
+    ['get', '/api/v1/exportaciones/precios/pdf', { sesion: true, csrf: false }],
   ];
 
   it.each(esperados)('documenta %s %s', (metodo, ruta, seguridad) => {

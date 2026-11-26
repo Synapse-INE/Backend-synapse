@@ -11,6 +11,7 @@ import { AdjuntosModule } from './modules/adjuntos/adjuntos.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { IntegracionesModule } from './modules/integraciones/integraciones.module.js';
 import { RecuperacionModule } from './modules/recuperacion/recuperacion.module.js';
+import { ExportacionModule } from './modules/exportacion/exportacion.module.js';
 import { FormulariosModule } from './modules/formularios/formularios.module.js';
 import { RegistroModule } from './modules/registro/registro.module.js';
 import { SolicitudesModule } from './modules/solicitudes/solicitudes.module.js';
@@ -83,6 +84,7 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
     AdministracionModule,
     SolicitudesModule,
     FormulariosModule,
+    ExportacionModule,
     FuentesConsultaModule,
     NotificacionesModule,
     PersonalIneModule,
