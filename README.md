@@ -2,9 +2,11 @@
 
 > **Demo en línea:** [synapse.realiquezisaac.workers.dev](https://synapse.realiquezisaac.workers.dev/)
 
-Plataforma para consultar precios de referencia y gestionar solicitudes de investigación de precios. La solución incluye una interfaz web en React y Vite, una API en NestJS y una base de datos PostgreSQL administrada con Prisma.
+> **Antes de probar la demo:** La API puede suspenderse tras un período de inactividad. Por eso, la primera solicitud puede tardar hasta un minuto mientras el sistema se reactiva; espere y vuelva a cargar la página si es necesario.
+>
+> **Correo electrónico:** El proveedor bloqueó temporalmente el envío por motivos de seguridad, así que los correos no están funcionando en la demo. En pruebas comprobamos que el sistema sí puede enviarlos cuando SMTP está configurado. Para habilitarlo, el equipo del INE o el cliente debe configurar las variables de entorno SMTP del backend; no se requieren cambios en el código.
 
-La API se aloja en el plan gratuito de Render y puede suspenderse tras un período de inactividad. Si la primera carga tarda hasta un minuto, espere y vuelva a cargar la página.
+Plataforma para consultar precios de referencia y gestionar solicitudes de investigación de precios. La solución incluye una interfaz web en React y Vite, una API en NestJS y una base de datos PostgreSQL administrada con Prisma.
 
 ## Problema que resuelve y público objetivo
 
@@ -40,7 +42,7 @@ Navegador
   └─ Cloudflare Workers + Static Assets (React/Vite)
        └─ /api/* → Worker reenvía las solicitudes a la API NestJS en Render
                       ├─ PostgreSQL 18 con pgvector en Neon
-                      └─ Brevo (SMTP, puerto 2525) → destinatarios de los correos
+                      └─ SMTP configurable → destinatarios de los correos
 ```
 
 El reenvío de `/api/*` permite que el navegador use el mismo dominio para la interfaz y la API, lo cual es necesario para las cookies de sesión. El frontend se sirve como archivos estáticos; la API, la base de datos y el servicio de correo se alojan por separado.
@@ -57,7 +59,7 @@ El reenvío de `/api/*` permite que el navegador use el mismo dominio para la in
 | Neon (PostgreSQL 18) y pgvector | Base de datos administrada y extensión vectorial de PostgreSQL. |
 | Prisma 7 | Acceso a datos, generación del cliente y migraciones. |
 | GitHub | Repositorio desde el que Render obtiene el backend. |
-| Brevo (SMTP relay) | Envío de correos de la aplicación mediante SMTP. |
+| SMTP | Envío configurable de correos de la aplicación. Actualmente deshabilitado en la demo. |
 
 El proyecto utiliza servicios con planes gratuitos en la nube; la disponibilidad, límites y tiempos de respuesta dependen de esos proveedores. El entorno local descrito más abajo usa PostgreSQL 16 con Docker Compose, mientras que la base desplegada usa PostgreSQL 18 en Neon.
 
@@ -92,11 +94,11 @@ La base de evaluación se creó como `synapse_demo` en AWS US East 1 y utiliza l
 
 No agregue cadenas de conexión, contraseñas de la base ni llaves de acceso al repositorio o a este documento.
 
-### Envío de correos con Brevo
+### Envío de correos mediante SMTP
 
-La API genera los mensajes de la aplicación —por ejemplo, los enlaces de verificación de cuenta— y los envía a Brevo mediante SMTP. El plan gratuito de Render bloquea la salida por los puertos SMTP 25, 465 y 587; Brevo admite el puerto 2525, por lo que puede usarse sin cambiar el código de la aplicación.
+La API genera los mensajes de la aplicación —por ejemplo, los enlaces de verificación de cuenta— y puede enviarlos mediante SMTP. El envío está actualmente deshabilitado en la demo porque el proveedor bloqueó temporalmente la emisión por motivos de seguridad. Las pruebas confirmaron que el sistema sí puede enviar correos cuando cuenta con una configuración SMTP válida. Para habilitarlo, el equipo del INE o el cliente debe configurar las variables de entorno del servicio y desplegar de nuevo la API.
 
-Para configurar el servicio:
+Como referencia, para configurar Brevo:
 
 1. Cree una cuenta en Brevo y verifique el número de teléfono.
 2. Verifique la dirección que se utilizará como remitente.
