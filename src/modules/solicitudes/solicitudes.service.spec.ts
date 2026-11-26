@@ -113,6 +113,8 @@ describe('SolicitudesService', () => {
     avisarAsignacion: vi.fn(),
     avisarColaboracion: vi.fn(),
   };
+  const config = { getOrThrow: vi.fn().mockReturnValue('https://portal.example.test') };
+  const mail = { send: vi.fn().mockResolvedValue(undefined) };
   let servicio: SolicitudesService;
 
   beforeEach(() => {
@@ -131,6 +133,8 @@ describe('SolicitudesService', () => {
       prisma as never,
       auditoria as never,
       notificaciones as never,
+      config as never,
+      mail as never,
     );
   });
 

@@ -51,7 +51,13 @@ import { DatabaseModule } from './infrastructure/database/database.module.js';
           .default('lax'),
         COOKIE_DOMAIN: Joi.string().allow('').default(''),
         TRUSTED_PROXY_CIDRS: Joi.string().allow('').default(''),
-        FRONTEND_URL: Joi.string().uri().default('http://localhost:5173'),
+        // Puede sobrescribirse por entorno. El valor de producción evita que
+        // los correos generen enlaces hacia localhost si la variable falta.
+        FRONTEND_URL: Joi.string().uri().default(
+          process.env.NODE_ENV === 'production'
+            ? 'https://synapse.realiquezisaac.workers.dev'
+            : 'http://localhost:5173',
+        ),
         EMAIL_TOKEN_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
         RESET_TOKEN_TTL_HOURS: Joi.number().integer().min(1).max(24).default(1),
         INVITATION_TTL_HOURS: Joi.number().integer().min(1).max(720).default(72),

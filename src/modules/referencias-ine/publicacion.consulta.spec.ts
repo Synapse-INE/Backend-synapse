@@ -16,7 +16,10 @@ describe('consulta pública', () => {
       texto: 'nitrilo',
       fecha: '2026-07-06',
     });
-    expect(donde.categoriaOriginal).toBe('Salud e insumos hospitalarios');
+    expect(donde.categoriaOriginal).toMatchObject({
+      contains: 'Salud e insumos hospitalarios',
+      mode: 'insensitive',
+    });
     expect(donde.producto).toMatchObject({ contains: 'guante' });
     expect(donde.fechaPublicacion).toEqual(new Date('2026-07-06T00:00:00.000Z'));
     expect(donde.AND).toBeDefined();

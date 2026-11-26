@@ -2,19 +2,23 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedRequest } from '../../common/auth/auth-context.js';
 import { assertResourceOwnership } from '../../common/auth/ownership.js';
 import { Prisma } from '../../infrastructure/database/generated/client.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { MailService } from '../../infrastructure/mail/mail.service.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
 import { NotificacionesService } from '../notificaciones/notificaciones.service.js';
 import { validarFormulariosParaEnvio } from '../formularios/formularios-envio.js';
 import { filtroPersonalAsignable } from '../personal-ine/personal-asignable.js';
 import { medirAtencion, type AtencionExpediente } from './atencion.js';
 import { borradorInforme } from './borrador-informe.js';
+import { correoInformeEmitido } from './correo-informe.js';
 import { medirExpediente } from './estadisticas-precios.js';
 import type {
   ActualizarSolicitudDto,
@@ -164,10 +168,14 @@ const ETAPAS_BOLETA = ['EN_INVESTIGACION', 'EN_ANALISIS'];
 
 @Injectable()
 export class SolicitudesService {
+  private readonly logger = new Logger(SolicitudesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly notificaciones: NotificacionesService,
+    private readonly config: ConfigService,
+    private readonly mail: MailService,
   ) {}
 
   async crear(dto: CrearSolicitudDto, actor: Actor, ip?: string) {
@@ -995,7 +1003,7 @@ export class SolicitudesService {
 
   async emitirInforme(id: string, informeId: string, actor: Actor, ip?: string) {
     this.exigirPersonal(actor);
-    return this.prisma.$transaction(async (tx) => {
+    const emitido = await this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
       await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(actual.estado, ['EN_INFORME'], 'Solo se emite un documento en EN_INFORME.');
@@ -1065,14 +1073,25 @@ export class SolicitudesService {
         'Documento emitido',
         `${actual.codigo}: se emitió ${informe.tipo === 'OFICIO' ? 'el oficio' : 'el informe técnico'}.`,
       );
-      return this.presentar(
+      const solicitud = this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
           where: { id },
           select: this.detallePara(actor),
         }),
         actor,
       );
+      return {
+        solicitud,
+        aviso: {
+          creadaPorId: actual.creadaPorId,
+          codigo: actual.codigo,
+          tipo: informe.tipo,
+          resumen: (solicitud.informes ?? []).find((item) => item.id === informe.id)?.resumen ?? '',
+        },
+      };
     });
+    await this.enviarInformeEmitido(emitido.aviso);
+    return emitido.solicitud;
   }
 
   async registrarEntrega(id: string, dto: RegistrarEntregaDto, actor: Actor, ip?: string) {
@@ -1733,9 +1752,7 @@ export class SolicitudesService {
           ...solicitud,
           consultas: [],
           validaciones: [],
-          informes: solicitud.estado === 'COMPLETADA'
-            ? (solicitud.informes ?? []).filter((informe) => informe.estado === 'EMITIDO')
-            : [],
+          informes: (solicitud.informes ?? []).filter((informe) => informe.estado === 'EMITIDO'),
           entregas: solicitud.estado === 'COMPLETADA' ? (solicitud.entregas ?? []) : [],
         };
     return { ...visible, atencion: medirAtencion(visible) };
@@ -1978,6 +1995,42 @@ export class SolicitudesService {
       detalle,
       incluirCreador,
     });
+  }
+
+  private async enviarInformeEmitido(datos: {
+    creadaPorId: string | null;
+    codigo: string | null;
+    tipo: 'INFORME_TECNICO' | 'OFICIO';
+    resumen: string;
+  }) {
+    if (!datos.creadaPorId || !datos.codigo || !datos.resumen) return;
+    try {
+      const destinatario = await this.prisma.usuario.findUnique({
+        where: { id: datos.creadaPorId },
+        select: { email: true, nombre: true },
+      });
+      if (!destinatario) return;
+      const base = this.config.getOrThrow<string>('FRONTEND_URL').replace(/\/$/, '');
+      const mensaje = correoInformeEmitido({
+        nombre: destinatario.nombre,
+        codigo: datos.codigo,
+        tipo: datos.tipo,
+        resumen: datos.resumen,
+        enlace: `${base}/cuenta`,
+      });
+      await this.mail.send({
+        to: destinatario.email,
+        subject: `Documento emitido · ${datos.codigo}`,
+        text: mensaje.text,
+        html: mensaje.html,
+      });
+    } catch (error) {
+      // La emisión ya quedó registrada; un fallo de SMTP no debe revertirla.
+      this.logger.error(
+        'No se pudo enviar el correo del documento emitido.',
+        error instanceof Error ? error.message : undefined,
+      );
+    }
   }
 
   private historial(
