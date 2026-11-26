@@ -73,6 +73,7 @@ describe('AuthService', () => {
       id: user.id,
       email: user.email,
       nombre: user.nombre,
+      proveedorId: null,
       roles: ['SOLICITANTE'],
     });
     expect(result.sessionToken).toBeTruthy();
