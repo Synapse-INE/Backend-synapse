@@ -83,6 +83,7 @@ export class AuthGuard implements CanActivate {
         email: session.usuario.email,
         nombre: session.usuario.nombre,
         roles: session.usuario.roles.map(({ rol }) => rol.codigo),
+        proveedorId: session.usuario.proveedorId ?? null,
       },
       ownership: {
         usuarioId: session.usuario.id,

@@ -1,4 +1,10 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
@@ -8,6 +14,9 @@ import type { AuthenticatedUser } from '../../common/auth/auth-context.js';
 
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$53PUPCI+M/TtKjVnO5JRpA$ko/LbHtOTytiF++bA/fQFp27BMb2iOQzQzcsuZ3N9lk';
+
+const VENTANA_BLOQUEO_MS = 15 * 60_000;
+const MAXIMO_FALLIDOS_POR_CUENTA = 10;
 
 export type ContextoSolicitud = { ip?: string };
 
@@ -26,6 +35,7 @@ export class AuthService {
     contexto: ContextoSolicitud = {},
   ) {
     const normalizedEmail = email.trim().toLowerCase();
+    await this.exigirSinExcesoDeIntentos(normalizedEmail);
     const user = await this.prisma.usuario.findUnique({
       where: { email: normalizedEmail },
       select: {
@@ -33,6 +43,7 @@ export class AuthService {
         email: true,
         passwordHash: true,
         nombre: true,
+        proveedorId: true,
         estado: true,
         emailVerificadoEn: true,
         roles: {
@@ -48,19 +59,20 @@ export class AuthService {
       password,
     );
 
-    if (
-      !user ||
-      !passwordMatches ||
-      user.estado !== 'ACTIVO' ||
-      !user.emailVerificadoEn
-    ) {
-      await this.auditar({
-        actorId: user?.id ?? null,
-        accion: 'INICIO_SESION_FALLIDO',
-        ip: contexto.ip,
-        metadatos: { emailHash: hashToken(normalizedEmail) },
+    if (!user || !passwordMatches) {
+      return this.rechazar(user?.id ?? null, contexto, normalizedEmail);
+    }
+
+    if (user.estado === 'PENDIENTE_APROBACION' && user.emailVerificadoEn) {
+      return this.rechazar(user.id, contexto, normalizedEmail, {
+        code: 'CUENTA_PENDIENTE_APROBACION',
+        detail:
+          'Tu correo ya está verificado. Un administrador del INE todavía tiene que aprobar la cuenta.',
       });
-      throw new UnauthorizedException('Credenciales no válidas.');
+    }
+
+    if (user.estado !== 'ACTIVO' || !user.emailVerificadoEn) {
+      return this.rechazar(user.id, contexto, normalizedEmail);
     }
 
     const sessionToken = randomBytes(32).toString('base64url');
@@ -125,6 +137,44 @@ export class AuthService {
     });
   }
 
+  /**
+   * Límite por cuenta además del límite por IP: un atacante repartido en muchas
+   * IP no puede seguir probando contraseñas contra el mismo correo.
+   */
+  private async exigirSinExcesoDeIntentos(email: string) {
+    const fallidos = await this.prisma.eventoAuditoria.count({
+      where: {
+        accion: 'INICIO_SESION_FALLIDO',
+        creadoEn: { gte: new Date(Date.now() - VENTANA_BLOQUEO_MS) },
+        metadatos: { path: ['emailHash'], equals: hashToken(email) },
+      },
+    });
+    if (fallidos >= MAXIMO_FALLIDOS_POR_CUENTA) {
+      throw new HttpException(
+        {
+          code: 'CUENTA_LIMITADA',
+          detail: 'Demasiados intentos fallidos. Intenta de nuevo en unos minutos.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private async rechazar(
+    actorId: string | null,
+    contexto: ContextoSolicitud,
+    email: string,
+    respuesta: string | { code: string; detail: string } = 'Credenciales no válidas.',
+  ): Promise<never> {
+    await this.auditar({
+      actorId,
+      accion: 'INICIO_SESION_FALLIDO',
+      ip: contexto.ip,
+      metadatos: { emailHash: hashToken(email) },
+    });
+    throw new UnauthorizedException(respuesta);
+  }
+
   // La auditoría de un intento fallido o de un cierre no debe impedir la respuesta.
   private async auditar(evento: {
     actorId: string | null;
@@ -161,6 +211,7 @@ function toAuthenticatedUser(user: {
   id: string;
   email: string;
   nombre: string;
+  proveedorId?: string | null;
   roles: { rol: { codigo: string } }[];
 }): AuthenticatedUser {
   return {
@@ -168,5 +219,6 @@ function toAuthenticatedUser(user: {
     email: user.email,
     nombre: user.nombre,
     roles: user.roles.map(({ rol }) => rol.codigo),
+    proveedorId: user.proveedorId ?? null,
   };
 }

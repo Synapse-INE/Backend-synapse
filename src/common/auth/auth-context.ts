@@ -5,6 +5,7 @@ export interface AuthenticatedUser {
   email: string;
   nombre: string;
   roles: string[];
+  proveedorId: string | null;
 }
 
 export interface AuthenticatedOwnership {

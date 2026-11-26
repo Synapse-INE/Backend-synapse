@@ -57,8 +57,9 @@ describe('InvitacionesService', () => {
       proveedorId: 'prov-nuevo',
       creadaPorId: 'admin-1',
     });
-    const { text } = mail.send.mock.calls[0][0];
-    const token = new URL(text.match(/https:\/\/\S+/)![0]).searchParams.get('token')!;
+    const envio = mail.send.mock.calls[0][0];
+    expect(envio.html).toContain('Completar registro');
+    const token = new URL(envio.text.match(/https:\/\/\S+/)![0]).searchParams.get('token')!;
     expect(hashToken(token)).toBe(data.tokenHash);
     expect(JSON.stringify(resultado)).not.toContain(token);
     expect(resultado.correoEnviado).toBe(true);

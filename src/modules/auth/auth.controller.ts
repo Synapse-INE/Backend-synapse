@@ -65,7 +65,8 @@ export class AuthController {
   })
   @ApiBadRequestResponse({ description: 'El cuerpo no cumple la validación.' })
   @ApiUnauthorizedResponse({
-    description: 'Credenciales no válidas o cuenta no habilitada.',
+    description:
+      'Credenciales no válidas, correo sin verificar, o cuenta verificada que aún espera la aprobación del administrador (`CUENTA_PENDIENTE_APROBACION`).',
   })
   @ApiResponse({
     status: 429,

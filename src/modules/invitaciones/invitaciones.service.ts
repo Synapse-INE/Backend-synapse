@@ -11,6 +11,7 @@ import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { MailService } from '../../infrastructure/mail/mail.service.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
 import type { CrearInvitacionDto } from './invitaciones.dto.js';
+import { correoInvitacion } from './correo-invitacion.js';
 
 @Injectable()
 export class InvitacionesService {
@@ -38,10 +39,11 @@ export class InvitacionesService {
         detail: 'Ya existe una cuenta con ese correo.',
       });
     }
+    let nombreEmpresa = dto.nuevoProveedor?.nombreComercial?.trim();
     if (dto.proveedorId) {
       const proveedor = await this.prisma.proveedor.findUnique({
         where: { id: dto.proveedorId },
-        select: { id: true },
+        select: { id: true, nombreComercial: true },
       });
       if (!proveedor) {
         throw new NotFoundException({
@@ -49,6 +51,7 @@ export class InvitacionesService {
           detail: 'El proveedor indicado no existe.',
         });
       }
+      nombreEmpresa = proveedor.nombreComercial;
     }
 
     const { token, hash } = generarToken();
@@ -90,7 +93,7 @@ export class InvitacionesService {
       return creada;
     });
 
-    const correoEnviado = await this.enviar(email, token, horas);
+    const correoEnviado = await this.enviar(email, token, horas, nombreEmpresa);
     return {
       id: invitacion.id,
       email,
@@ -100,14 +103,25 @@ export class InvitacionesService {
     };
   }
 
-  private async enviar(email: string, token: string, horas: number) {
+  private async enviar(
+    email: string,
+    token: string,
+    horas: number,
+    empresa?: string,
+  ) {
     const base = this.config.getOrThrow<string>('FRONTEND_URL');
     const enlace = `${base}/aceptar-invitacion?token=${encodeURIComponent(token)}`;
+    const { text, html } = correoInvitacion({
+      enlace,
+      horas,
+      empresa,
+    });
     try {
       await this.mail.send({
         to: email,
         subject: 'Invitación al Portal de Precios de Referencia del INE',
-        text: `El INE te invita a crear una cuenta de proveedor.\n\nUsa este enlace de un solo uso (vence en ${horas} horas):\n${enlace}\n\nSi no esperabas esta invitación, ignora este mensaje.`,
+        text,
+        html,
       });
       return true;
     } catch (error) {

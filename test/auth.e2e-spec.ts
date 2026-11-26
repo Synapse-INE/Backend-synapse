@@ -40,7 +40,7 @@ describe('Authentication endpoints', () => {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    eventoAuditoria: { create: vi.fn() },
+    eventoAuditoria: { create: vi.fn(), count: vi.fn().mockResolvedValue(0) },
     $transaction: vi.fn(),
   };
   let app: INestApplication;
@@ -140,6 +140,7 @@ describe('Authentication endpoints', () => {
       id: user.id,
       email: user.email,
       nombre: user.nombre,
+      proveedorId: null,
       roles: ['SOLICITANTE'],
     });
     expect(signIn.body.sessionToken).toBeUndefined();

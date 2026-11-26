@@ -17,7 +17,7 @@ describe('AuthService', () => {
       create: vi.fn(),
       updateMany: vi.fn(),
     },
-    eventoAuditoria: { create: vi.fn() },
+    eventoAuditoria: { create: vi.fn(), count: vi.fn().mockResolvedValue(0) },
     $transaction: vi.fn(),
   };
   let authService: AuthService;
@@ -73,6 +73,7 @@ describe('AuthService', () => {
       id: user.id,
       email: user.email,
       nombre: user.nombre,
+      proveedorId: null,
       roles: ['SOLICITANTE'],
     });
     expect(result.sessionToken).toBeTruthy();
@@ -133,12 +134,16 @@ describe('AuthService', () => {
       roles: [{ rol: { codigo: 'SOLICITANTE' } }],
     });
 
-    await expect(
-      authService.signIn(
-        'requester@example.org',
-        'correct horse battery staple',
-      ),
-    ).rejects.toThrow('Credenciales no válidas.');
+    const error = await authService
+      .signIn('requester@example.org', 'correct horse battery staple')
+      .catch((fallo: unknown) => fallo);
+
+    expect(error).toBeInstanceOf(UnauthorizedException);
+    expect((error as UnauthorizedException).getResponse()).toMatchObject({
+      code: 'CUENTA_PENDIENTE_APROBACION',
+      detail:
+        'Tu correo ya está verificado. Un administrador del INE todavía tiene que aprobar la cuenta.',
+    });
     expect(prisma.sesionUsuario.create).not.toHaveBeenCalled();
   });
 

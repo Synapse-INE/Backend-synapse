@@ -19,6 +19,9 @@ prisma/*.db-journal
 # Testing y cobertura
 coverage/
 
+# Archivos privados de los expedientes
+storage/
+
 # Logs y caché
 logs/
 *.log

@@ -86,3 +86,27 @@ Pasaron `npm run build`, `npm test` (41 pruebas), `npm run test:e2e` (4 pruebas)
 - README: tabla completa de endpoints, secciones de registro, solicitudes y errores (que se habían perdido en una fusión) y sección de pendientes.
 - Nuevo [backlog-backend.md](./backlog-backend.md) con los ítems B-01 a B-14, su orden, las decisiones del INE que los bloquean y la definición de «backend terminado».
 - Actualizados `estado-y-siguientes-pasos.md`, `criterios-aceptacion-api.md` y `api-service-contracts.md`.
+
+## 2026-11-25 — Cierre del backend
+
+**Rama:** `feat/backend-completo`
+
+- **Recuperación de cuenta (B-01):** migración `20261126000000_restablecimiento_contrasena`; `POST /auth/olvide-contrasena`, `/restablecer-contrasena` y `/cambiar-contrasena`. Token de un solo uso con hash, respuesta genérica, solo cuentas activas, cierre de sesiones al restablecer y, al cambiar, de todas menos la actual. Comando `npm run crear-admin` (contraseña por entrada oculta, se niega si ya hay administrador; candado `pg_advisory_xact_lock`).
+- **Usuarios y roles (B-02):** alta de personal con enlace de activación (sin contraseña conocida), bloqueo y desbloqueo con revocación de sesiones, y reemplazo de roles. Reglas: no actuar sobre uno mismo, no dejar el sistema sin administrador activo, `PROVEEDOR` y `SOLICITANTE` solo con su perfil. Candado de fila (`FOR UPDATE`) en cada cambio.
+- **Auditoría (B-03):** filtros por actor, acción, recurso, IP y rango de fechas; índice `(accion, creado_en)`.
+- **Operación (B-05):** `GET /salud/listo`; `x-request-id` y registro JSON por petición sin cuerpos ni parámetros; el filtro de errores convierte cualquier error no previsto en `application/problem+json` genérico; `Dockerfile` con usuario `node`, `HEALTHCHECK` y volumen de adjuntos; el servicio `api` espera a `migrate`.
+- **Formularios (B-07, B-08, B-09):** requisitos con aprobación del INE, empresas propuestas (S.11), comisión, representantes, cotizaciones de importación y justificaciones (S.21/S.22). Mínimos al enviar integrados en `enviar` (función pura `evaluarFormularios` con pruebas). Importes como cadenas decimales.
+- **Defecto hallado por la prueba contra PostgreSQL:** borrar un borrador con cotizaciones de importación fallaba por una clave foránea `RESTRICT`. Migración `20261126020000_cotizaciones_en_cascada` y bloqueo de la sustitución de productos cuando ya hay cotizaciones (`PRODUCTOS_CON_COTIZACIONES`).
+- **Catálogo INE por HTTP (B-10):** carga multipart (máx. 50 MB, reutiliza el importador), filas por estado, reprocesado y revisión de alias de modalidad con el revisor registrado.
+- **Seguridad (B-14, parcial):** límite por cuenta en el inicio de sesión (10 fallos en 15 minutos → 429).
+- **Verificación:** 144 pruebas unitarias y 119 e2e, `prisma migrate diff` vacío y una prueba contra PostgreSQL real de recuperación, administración, formularios y alias (`test/backend-completo.e2e-spec.ts`). Prueba de humo del servidor: readiness, `x-request-id` y registro sin tokens.
+- **Pendiente:** almacenamiento de adjuntos para producción (hoy en disco), importación de productos del proveedor, búsqueda externa e IA, controles de DPI/CUI y revisión de dependencias; y la confirmación de las decisiones del INE listadas en el backlog.
+
+## 2026-11-26 — Exportación del catálogo de precios
+
+**Rama:** `feat/exportar-precios`
+
+- `GET /exportaciones/precios/datos`, `/excel` y `/pdf` para `JEFE`, `TRABAJADOR_INE` y `ADMIN`, con los filtros de la publicación más rango de fechas y `soloVigentes`. `datos` entrega filas y columnas en JSON para que el frontend arme su propio PDF.
+- Excel con `exceljs` (precio como número, fechas reales, filtro automático, hoja de información); PDF con `pdfkit` (horizontal, encabezado repetido, numeración). Nueva dependencia `pdfkit` y `@types/pdfkit`; el `package-lock.json` solo suma sus paquetes (no se tocaron las entradas opcionales de otras plataformas).
+- Límites por formato (20 000 / 50 000 / 3 000 filas) con 422 `EXPORTACION_DEMASIADO_GRANDE` en vez de truncar; inyección de fórmulas neutralizada en Excel; auditoría de cada exportación.
+- Verificación: 6 pruebas contra PostgreSQL real (`test/exportacion.e2e-spec.ts`), contrato OpenAPI a 96 operaciones y prueba HTTP con sesión real: Excel de las 7 783 filas del catálogo en menos de 2 s. El PDF se generó y se comprobó que es válido, pero no se inspeccionó visualmente su maquetación.

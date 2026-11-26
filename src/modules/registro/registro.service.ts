@@ -14,6 +14,7 @@ import {
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { MailService } from '../../infrastructure/mail/mail.service.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
+import { correoVerificacion } from './correo-verificacion.js';
 import type {
   AceptarInvitacionDto,
   RegistroSolicitanteDto,
@@ -267,11 +268,17 @@ export class RegistroService {
     const base = this.config.getOrThrow<string>('FRONTEND_URL');
     const enlace = `${base}/verificar-correo?token=${encodeURIComponent(token)}`;
     const horas = this.config.getOrThrow<number>('EMAIL_TOKEN_TTL_HOURS');
+    const mensaje = correoVerificacion({
+      nombre,
+      enlace,
+      horas,
+    });
     try {
       await this.mail.send({
         to: email,
         subject: 'Verifica tu correo en el Portal de Precios de Referencia',
-        text: `Hola ${nombre.replace(/[\r\n]/g, ' ')},\n\nConfirma tu correo con este enlace (vence en ${horas} horas):\n${enlace}\n\nDespués, un administrador del INE revisará tu solicitud de acceso.\nSi no creaste esta cuenta, ignora este mensaje.`,
+        text: mensaje.text,
+        html: mensaje.html,
       });
     } catch (error) {
       // Nunca se registra el token ni el enlace.

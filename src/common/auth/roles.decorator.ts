@@ -2,6 +2,7 @@ import { SetMetadata } from '@nestjs/common';
 
 export const ROLE_CODES = [
   'ADMIN',
+  'JEFE',
   'TRABAJADOR_INE',
   'PROVEEDOR',
   'SOLICITANTE',

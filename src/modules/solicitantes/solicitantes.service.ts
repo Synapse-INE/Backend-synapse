@@ -21,7 +21,14 @@ export class SolicitantesService {
       select: {
         cargo: true,
         createdAt: true,
-        usuario: { select: { id: true, email: true, nombre: true } },
+        usuario: {
+          select: {
+            id: true,
+            email: true,
+            nombre: true,
+            emailVerificadoEn: true,
+          },
+        },
         institucion: { select: { id: true, nombreOficial: true, nit: true } },
       },
     });
@@ -33,6 +40,7 @@ export class SolicitantesService {
       cargo: perfil.cargo,
       institucion: perfil.institucion,
       solicitadoEn: perfil.createdAt,
+      correoVerificadoEn: perfil.usuario.emailVerificadoEn,
     }));
   }
 
