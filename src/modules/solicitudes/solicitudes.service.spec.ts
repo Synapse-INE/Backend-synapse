@@ -78,6 +78,7 @@ describe('SolicitudesService', () => {
       findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn(),
     },
+    cotizacionProducto: { count: vi.fn().mockResolvedValue(0) },
     validacionAnalisis: {
       count: vi.fn().mockResolvedValue(0),
       upsert: vi.fn(),
