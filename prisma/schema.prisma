@@ -352,8 +352,27 @@ model Proveedor {
   productos     ProductoProveedor[]
   importaciones ImportacionProveedor[]
   solicitudes   ProveedorSolicitud[]
+  avisosPrecio  AvisoPrecioProveedor[]
 
   @@map("proveedores")
+}
+
+/// Pedido al proveedor de actualizar precios al recibir una solicitud; la solicitud espera
+/// a que todos actualicen o a que venza el plazo.
+model AvisoPrecioProveedor {
+  id            String    @id @default(uuid()) @db.Uuid
+  solicitudId   String    @map("solicitud_id") @db.Uuid
+  proveedorId   String    @map("proveedor_id") @db.Uuid
+  avisadoEn     DateTime  @default(now()) @map("avisado_en") @db.Timestamptz(6)
+  venceEn       DateTime  @map("vence_en") @db.Timestamptz(6)
+  actualizadoEn DateTime? @map("actualizado_en") @db.Timestamptz(6)
+
+  solicitud SolicitudPrecio @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  proveedor Proveedor       @relation(fields: [proveedorId], references: [id], onDelete: Cascade)
+
+  @@unique([solicitudId, proveedorId])
+  @@index([proveedorId, actualizadoEn])
+  @@map("avisos_precio_proveedor")
 }
 
 model InvitacionProveedor {
@@ -615,6 +634,7 @@ model SolicitudPrecio {
   requisitos           RequisitoSolicitud[]
   productos            ProductoSolicitud[]
   proveedoresSugeridos ProveedorSolicitud[]
+  avisosPrecio         AvisoPrecioProveedor[]
   justificaciones      JustificacionSolicitud[]
   comisionImportacion  ComisionImportacion?
 

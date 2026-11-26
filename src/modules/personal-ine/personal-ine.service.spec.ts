@@ -18,7 +18,11 @@ describe('PersonalIneService', () => {
     expect(prisma.usuario.findMany).toHaveBeenCalledWith({
       where: {
         estado: 'ACTIVO',
-        roles: { some: { rol: { codigo: 'TRABAJADOR_INE' } } },
+        roles: {
+          some: {
+            rol: { codigo: { in: ['TRABAJADOR_INE', 'JEFE'] } },
+          },
+        },
       },
       orderBy: { nombre: 'asc' },
       select: { id: true, nombre: true },

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { AuthenticatedOwnership } from '../../common/auth/auth-context.js';
 import { assertResourceOwnership } from '../../common/auth/ownership.js';
+import type { Prisma } from '../../infrastructure/database/generated/client.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import type {
   ActualizarProductoProveedorDto,
@@ -92,6 +93,7 @@ export class ProveedoresService {
           registradoPorId: usuarioId,
         },
       });
+      await this.marcarAvisosAlDia(tx, proveedorId);
       return tx.productoProveedor.findUniqueOrThrow({
         where: { id: producto.id },
         include: { precios: { orderBy: { createdAt: 'asc' } } },
@@ -155,6 +157,7 @@ export class ProveedoresService {
             registradoPorId: usuarioId,
           },
         });
+        await this.marcarAvisosAlDia(tx, proveedorId);
       }
       return tx.productoProveedor.findUniqueOrThrow({
         where: { id: productoId },
@@ -210,6 +213,7 @@ export class ProveedoresService {
           registradoPorId: usuarioId,
         },
       });
+      await this.marcarAvisosAlDia(tx, proveedorId);
       return tx.productoProveedor.findUniqueOrThrow({
         where: { id: productoId },
         include: { precios: { orderBy: { createdAt: 'asc' } } },
@@ -217,6 +221,64 @@ export class ProveedoresService {
     });
 
     return serializarProducto(actualizado);
+  }
+
+  async listarAvisosPrecio(actor: AuthenticatedOwnership) {
+    const proveedorId = this.exigirProveedor(actor);
+    const avisos = await this.prisma.avisoPrecioProveedor.findMany({
+      where: { proveedorId, actualizadoEn: null, venceEn: { gt: new Date() } },
+      orderBy: { venceEn: 'asc' },
+      select: {
+        id: true,
+        avisadoEn: true,
+        venceEn: true,
+        solicitud: {
+          select: {
+            codigo: true,
+            titulo: true,
+            productos: { orderBy: { numero: 'asc' }, select: { nombre: true } },
+          },
+        },
+      },
+    });
+    return {
+      avisos: avisos.map((aviso) => ({
+        id: aviso.id,
+        avisadoEn: aviso.avisadoEn,
+        venceEn: aviso.venceEn,
+        codigo: aviso.solicitud.codigo,
+        titulo: aviso.solicitud.titulo,
+        productos: aviso.solicitud.productos.map((producto) => producto.nombre),
+      })),
+    };
+  }
+
+  async confirmarAvisoPrecio(actor: AuthenticatedOwnership, avisoId: string) {
+    const proveedorId = this.exigirProveedor(actor);
+    const aviso = await this.prisma.avisoPrecioProveedor.findUnique({
+      where: { id: avisoId },
+      select: { id: true, proveedorId: true, actualizadoEn: true },
+    });
+    if (!aviso || aviso.proveedorId !== proveedorId) {
+      throw new NotFoundException({
+        code: 'AVISO_NO_ENCONTRADO',
+        detail: 'El aviso no existe.',
+      });
+    }
+    if (!aviso.actualizadoEn) {
+      await this.prisma.avisoPrecioProveedor.update({
+        where: { id: avisoId },
+        data: { actualizadoEn: new Date() },
+      });
+    }
+    return this.listarAvisosPrecio(actor);
+  }
+
+  private marcarAvisosAlDia(tx: Prisma.TransactionClient, proveedorId: string) {
+    return tx.avisoPrecioProveedor.updateMany({
+      where: { proveedorId, actualizadoEn: null },
+      data: { actualizadoEn: new Date() },
+    });
   }
 
   private normalizarAtributos(

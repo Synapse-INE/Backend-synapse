@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { filtroPersonalAsignable } from './personal-asignable.js';
 
 @Injectable()
 export class PersonalIneService {
@@ -7,10 +8,7 @@ export class PersonalIneService {
 
   listar() {
     return this.prisma.usuario.findMany({
-      where: {
-        estado: 'ACTIVO',
-        roles: { some: { rol: { codigo: 'TRABAJADOR_INE' } } },
-      },
+      where: filtroPersonalAsignable,
       orderBy: { nombre: 'asc' },
       select: { id: true, nombre: true },
     });

@@ -105,6 +105,8 @@ describe('Documento OpenAPI', () => {
       '/api/v1/proveedores/yo/productos/{id}/confirmar-precio',
       { sesion: true, csrf: true },
     ],
+    ['get', '/api/v1/proveedores/yo/avisos-precio', { sesion: true, csrf: false }],
+    ['post', '/api/v1/proveedores/yo/avisos-precio/{id}/confirmar', { sesion: true, csrf: true }],
   ];
 
   it.each(esperados)('documenta %s %s', (metodo, ruta, seguridad) => {
