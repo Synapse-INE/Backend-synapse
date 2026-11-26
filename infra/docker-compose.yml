@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-precios}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
     ports:
-      - '127.0.0.1:5432:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -27,6 +27,27 @@ services:
     depends_on:
       database:
         condition: service_healthy
+
+  demo-seed:
+    image: synapse-api
+    profiles: ['evaluation']
+    command: ['node', 'dist/scripts/seed-demo.js']
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-precios}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-precios_referencia}
+      DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-false}
+      DEMO_SEED_ENVIRONMENT: ${DEMO_SEED_ENVIRONMENT:-}
+      DEMO_SEED_DATABASE_NAME: ${DEMO_SEED_DATABASE_NAME:-}
+      DEMO_SEED_CONFIRMATION: ${DEMO_SEED_CONFIRMATION:-}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
+      DEMO_JEFE_PASSWORD: ${DEMO_JEFE_PASSWORD:-}
+      DEMO_TRABAJADOR_INE_PASSWORD: ${DEMO_TRABAJADOR_INE_PASSWORD:-}
+      DEMO_PROVEEDOR_PASSWORD: ${DEMO_PROVEEDOR_PASSWORD:-}
+      DEMO_SOLICITANTE_PASSWORD: ${DEMO_SOLICITANTE_PASSWORD:-}
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   api:
     image: synapse-api

@@ -140,6 +140,35 @@ El proyecto incluye un adaptador SMTP configurable y componentes compartidos par
 
 Un solicitante no puede iniciar sesión hasta verificar su correo **y** ser aprobado. Los tokens se guardan solo como hash SHA-256 y caducan (`EMAIL_TOKEN_TTL_HOURS`, `INVITATION_TTL_HOURS`). Configura `FRONTEND_URL` (enlaces de los correos) y, opcionalmente, `REGISTRO_DOMINIOS_PERMITIDOS` (por ejemplo `gob.gt`). El DPI/CUI no se recolecta.
 
+### Cuentas para evaluación
+
+El perfil opcional `evaluation` crea cuentas sintéticas para los cinco roles del sistema: `ADMIN`, `JEFE`, `TRABAJADOR_INE`, `PROVEEDOR` y `SOLICITANTE`. Los usuarios proveedor y solicitante reciben también sus relaciones de perfil necesarias para acceder a las vistas correspondientes. Sus correos usan el dominio reservado `.invalid` y no reciben mensajes.
+
+Este seed no se ejecuta al iniciar la API. Para usarlo, configura secretos únicos de al menos 12 caracteres en las variables `DEMO_*_PASSWORD`, define `POSTGRES_DB` y `DEMO_SEED_DATABASE_NAME` con el mismo nombre dedicado terminado en `_evaluation` o `_demo`, y establece:
+
+```dotenv
+DEMO_SEED_ENABLED=true
+DEMO_SEED_ENVIRONMENT=isolated-evaluation
+DEMO_SEED_CONFIRMATION=SEED_ISOLATED_EVALUATION_DATABASE
+```
+
+Desde la carpeta `backend`, ejecuta `docker compose -p synapse-evaluation --env-file .env -f infra/docker-compose.yml --profile evaluation up --build -d` solo con una base y volumen dedicados. El nombre del proyecto mantiene los volúmenes separados del despliegue normal; si ya hay otro backend local, deténlo antes porque ambos usan los puertos 3000 y 5432. El seed crea las cuentas una vez; en ejecuciones posteriores verifica el estado y los roles sin cambiar contraseñas ni reparar registros alterados. El perfil normal de Compose no ejecuta esta tarea. No habilites estas variables para una base compartida o con datos reales.
+
+Para desarrollo local con menos consumo de memoria, configura un archivo ignorado `.env.evaluation` con `POSTGRES_PORT=5433`, las variables anteriores, credenciales distintas por rol y `DATABASE_URL` apuntando a `localhost:5433`. Inicia solo PostgreSQL con `docker compose -p synapse-evaluation --env-file .env.evaluation -f infra/docker-compose.yml up -d database`. Una vez, carga el archivo en el entorno de PowerShell y ejecuta:
+
+```powershell
+Get-Content .env.evaluation | ForEach-Object {
+  if ($_ -match '^([^#=]+)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], 'Process')
+  }
+}
+npm run db:generate
+npm run db:migrate:deploy
+npm run seed:demo
+```
+
+Para iniciar o reiniciar la API después, usa `npm run start:evaluation`. Así se mantiene la API local en el puerto 3000 sin reconstruir su imagen.
+
 ### Solicitudes de precio (S.00)
 
 | Método y ruta | Rol | Descripción |
