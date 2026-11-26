@@ -11,6 +11,7 @@ import { Prisma } from '../../infrastructure/database/generated/client.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
 import { NotificacionesService } from '../notificaciones/notificaciones.service.js';
+import { validarFormulariosParaEnvio } from '../formularios/formularios-envio.js';
 import { medirAtencion, type AtencionExpediente } from './atencion.js';
 import { borradorInforme } from './borrador-informe.js';
 import { medirExpediente } from './estadisticas-precios.js';
@@ -273,6 +274,16 @@ export class SolicitudesService {
       this.exigirEditable(actual.estado);
 
       if (dto.productos) {
+        const cotizaciones = await tx.cotizacionProducto.count({
+          where: { productoSolicitud: { solicitudId: id } },
+        });
+        if (cotizaciones > 0) {
+          throw new ConflictException({
+            code: 'PRODUCTOS_CON_COTIZACIONES',
+            detail:
+              'No se reemplaza la lista de productos cuando ya hay cotizaciones de importación. Elimínalas primero.',
+          });
+        }
         const [boletas, validaciones] = await Promise.all([
           tx.precioConsultado.count({
             where: { productoSolicitud: { solicitudId: id } },
@@ -330,7 +341,10 @@ export class SolicitudesService {
         'Solo se puede enviar un borrador.',
       );
 
-      const errores = this.validarEnvio(actual);
+      const errores = [
+        ...this.validarEnvio(actual),
+        ...(await validarFormulariosParaEnvio(tx, id, actual.modalidad)),
+      ];
       if (errores.length > 0) {
         throw new UnprocessableEntityException({
           code: 'SOLICITUD_INCOMPLETA',

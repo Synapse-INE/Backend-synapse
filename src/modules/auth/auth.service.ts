@@ -1,4 +1,10 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
@@ -8,6 +14,9 @@ import type { AuthenticatedUser } from '../../common/auth/auth-context.js';
 
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$53PUPCI+M/TtKjVnO5JRpA$ko/LbHtOTytiF++bA/fQFp27BMb2iOQzQzcsuZ3N9lk';
+
+const VENTANA_BLOQUEO_MS = 15 * 60_000;
+const MAXIMO_FALLIDOS_POR_CUENTA = 10;
 
 export type ContextoSolicitud = { ip?: string };
 
@@ -26,6 +35,7 @@ export class AuthService {
     contexto: ContextoSolicitud = {},
   ) {
     const normalizedEmail = email.trim().toLowerCase();
+    await this.exigirSinExcesoDeIntentos(normalizedEmail);
     const user = await this.prisma.usuario.findUnique({
       where: { email: normalizedEmail },
       select: {
@@ -125,6 +135,29 @@ export class AuthService {
       recursoId: sessionId,
       ip: contexto.ip,
     });
+  }
+
+  /**
+   * Límite por cuenta además del límite por IP: un atacante repartido en muchas
+   * IP no puede seguir probando contraseñas contra el mismo correo.
+   */
+  private async exigirSinExcesoDeIntentos(email: string) {
+    const fallidos = await this.prisma.eventoAuditoria.count({
+      where: {
+        accion: 'INICIO_SESION_FALLIDO',
+        creadoEn: { gte: new Date(Date.now() - VENTANA_BLOQUEO_MS) },
+        metadatos: { path: ['emailHash'], equals: hashToken(email) },
+      },
+    });
+    if (fallidos >= MAXIMO_FALLIDOS_POR_CUENTA) {
+      throw new HttpException(
+        {
+          code: 'CUENTA_LIMITADA',
+          detail: 'Demasiados intentos fallidos. Intenta de nuevo en unos minutos.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
   }
 
   private async rechazar(
