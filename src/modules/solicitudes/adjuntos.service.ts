@@ -145,7 +145,7 @@ export class AdjuntosService {
     const adjunto = await this.prisma.solicitudAdjunto.findFirst({
       where: { id: adjuntoId, solicitudId, ...this.filtroLectura(actor, solicitud.estado) },
     });
-    if (!adjunto || !/^[0-9a-f-]{36}\/[0-9a-f-]{36}\.pdf$/.test(adjunto.objectKey)) {
+    if (!adjunto || !/^[0-9a-f-]{36}\/(?:[0-9a-f-]{36}|informe-[0-9a-f-]{36})\.pdf$/.test(adjunto.objectKey)) {
       throw new NotFoundException({
         code: 'ADJUNTO_NO_ENCONTRADO',
         detail: 'Ese archivo no está en el expediente.',
@@ -155,6 +155,45 @@ export class AdjuntosService {
       type: 'application/pdf',
       disposition: `attachment; filename="${adjunto.nombreOriginal.replaceAll('"', '')}"`,
     });
+  }
+
+  /** Guarda el documento oficial generado por el sistema, sin requerir una carga manual. */
+  async guardarInformeEmitido(datos: {
+    solicitudId: string;
+    informeId: string;
+    codigo: string;
+    tipo: 'INFORME_TECNICO' | 'OFICIO';
+    version: number;
+    contenido: Buffer;
+    subidoPorId: string;
+  }) {
+    if (!datos.contenido.subarray(0, PDF.length).equals(PDF)) {
+      throw new Error('El generador de informe no produjo un PDF válido.');
+    }
+    const objectKey = `${datos.solicitudId}/informe-${datos.informeId}.pdf`;
+    const existente = await this.prisma.solicitudAdjunto.findFirst({ where: { objectKey } });
+    if (existente) return existente;
+    const destino = this.ruta(objectKey);
+    await mkdir(path.dirname(destino), { recursive: true });
+    await writeFile(destino, datos.contenido);
+    try {
+      const tipo = datos.tipo === 'OFICIO' ? 'oficio' : 'informe-tecnico';
+      return await this.prisma.solicitudAdjunto.create({
+        data: {
+          solicitudId: datos.solicitudId,
+          tipo: 'OTRO',
+          nombreOriginal: `${datos.codigo}-${tipo}-v${datos.version}.pdf`,
+          objectKey,
+          mimeVerificado: 'application/pdf',
+          tamanoBytes: datos.contenido.length,
+          sha256: createHash('sha256').update(datos.contenido).digest('hex'),
+          subidoPorId: datos.subidoPorId,
+        },
+      });
+    } catch (error) {
+      await unlink(destino).catch(() => undefined);
+      throw error;
+    }
   }
 
   async quitar(solicitudId: string, adjuntoId: string, actor: Actor) {

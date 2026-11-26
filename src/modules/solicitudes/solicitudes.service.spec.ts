@@ -115,6 +115,7 @@ describe('SolicitudesService', () => {
   };
   const config = { getOrThrow: vi.fn().mockReturnValue('https://portal.example.test') };
   const mail = { send: vi.fn().mockResolvedValue(undefined) };
+  const adjuntos = { guardarInformeEmitido: vi.fn().mockResolvedValue(undefined) };
   let servicio: SolicitudesService;
 
   beforeEach(() => {
@@ -135,6 +136,7 @@ describe('SolicitudesService', () => {
       notificaciones as never,
       config as never,
       mail as never,
+      adjuntos as never,
     );
   });
 

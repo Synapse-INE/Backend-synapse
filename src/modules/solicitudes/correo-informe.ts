@@ -38,3 +38,9 @@ export function correoInformeEmitido(datos: {
 </body></html>`;
   return { text, html };
 }
+
+export function correoExpedienteCompletado(datos: { nombre: string; codigo: string; enlace: string }) {
+  const text = `Hola ${datos.nombre},\n\nEl expediente ${datos.codigo} fue completado. El informe emitido está disponible en tu expediente.\n\nConsulta el expediente en: ${datos.enlace}`;
+  const html = `<!DOCTYPE html><html lang="es"><body style="font-family:Segoe UI,Arial,sans-serif;color:#172033"><h1 style="color:#163b78">Expediente completado</h1><p>Hola ${escaparHtml(datos.nombre)},</p><p>El expediente <b>${escaparHtml(datos.codigo)}</b> fue completado. El informe emitido está disponible en tu expediente.</p><p><a href="${escaparHtml(datos.enlace)}">Ver mi expediente</a></p></body></html>`;
+  return { text, html };
+}

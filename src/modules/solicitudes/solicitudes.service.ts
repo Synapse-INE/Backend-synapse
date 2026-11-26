@@ -18,7 +18,9 @@ import { validarFormulariosParaEnvio } from '../formularios/formularios-envio.js
 import { filtroPersonalAsignable } from '../personal-ine/personal-asignable.js';
 import { medirAtencion, type AtencionExpediente } from './atencion.js';
 import { borradorInforme } from './borrador-informe.js';
-import { correoInformeEmitido } from './correo-informe.js';
+import { correoExpedienteCompletado, correoInformeEmitido } from './correo-informe.js';
+import { crearPdfInforme } from './informe-pdf.js';
+import { AdjuntosService } from './adjuntos.service.js';
 import { medirExpediente } from './estadisticas-precios.js';
 import type {
   ActualizarSolicitudDto,
@@ -176,12 +178,13 @@ export class SolicitudesService {
     private readonly notificaciones: NotificacionesService,
     private readonly config: ConfigService,
     private readonly mail: MailService,
+    private readonly adjuntos: AdjuntosService,
   ) {}
 
   async crear(dto: CrearSolicitudDto, actor: Actor, ip?: string) {
     const institucion = await this.institucionDelActor(actor);
 
-    return this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const codigo = await this.siguienteCodigo(tx);
       const solicitud = await tx.solicitudPrecio.create({
         data: {
@@ -402,7 +405,7 @@ export class SolicitudesService {
       });
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
-        where: { id },
+          where: { id },
           select: this.detallePara(actor),
         }),
         actor,
@@ -416,7 +419,7 @@ export class SolicitudesService {
     actor: Actor,
     ip?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const actual = await tx.solicitudPrecio.findUnique({
         where: { id },
         select: { id: true, estado: true, codigo: true, creadaPorId: true, asignadaAId: true },
@@ -470,14 +473,22 @@ export class SolicitudesService {
         'Estado del expediente',
         `${actual.codigo} pasó de ${actual.estado} a ${dto.estado}.`,
       );
-      return this.presentar(
+      const solicitud = this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
-        where: { id },
+          where: { id },
           select: this.detallePara(actor),
         }),
         actor,
       );
+      return {
+        solicitud,
+        completada: dto.estado === 'COMPLETADA'
+          ? { creadaPorId: actual.creadaPorId, codigo: actual.codigo }
+          : null,
+      };
     });
+    if (resultado.completada) await this.enviarExpedienteCompletado(resultado.completada);
+    return resultado.solicitud;
   }
 
   async asignar(id: string, dto: AsignarSolicitudDto, actor: Actor, ip?: string) {
@@ -1009,7 +1020,7 @@ export class SolicitudesService {
       this.exigirEtapa(actual.estado, ['EN_INFORME'], 'Solo se emite un documento en EN_INFORME.');
       const informe = await tx.informeSolicitud.findFirst({
         where: { id: informeId, solicitudId: id },
-        select: { id: true, tipo: true, estado: true },
+        select: { id: true, tipo: true, estado: true, version: true, destinatario: true, resumen: true },
       });
       if (!informe) {
         throw new NotFoundException({
@@ -1088,9 +1099,27 @@ export class SolicitudesService {
           tipo: informe.tipo,
           resumen: (solicitud.informes ?? []).find((item) => item.id === informe.id)?.resumen ?? '',
         },
+        documento: {
+          solicitudId: id,
+          informeId: informe.id,
+          codigo: actual.codigo,
+          tipo: informe.tipo,
+          version: informe.version,
+          destinatario: informe.destinatario,
+          resumen: informe.resumen,
+          estadisticas,
+          subidoPorId: actor.usuario.id,
+        },
       };
     });
-    await this.enviarInformeEmitido(emitido.aviso);
+    let pdf: Buffer | undefined;
+    try {
+      pdf = await crearPdfInforme(emitido.documento);
+      await this.adjuntos.guardarInformeEmitido({ ...emitido.documento, contenido: pdf });
+    } catch (error) {
+      this.logger.error('No se pudo guardar el PDF del documento emitido.', error instanceof Error ? error.message : undefined);
+    }
+    await this.enviarInformeEmitido(emitido.aviso, pdf, emitido.documento);
     return emitido.solicitud;
   }
 
@@ -2002,7 +2031,7 @@ export class SolicitudesService {
     codigo: string | null;
     tipo: 'INFORME_TECNICO' | 'OFICIO';
     resumen: string;
-  }) {
+  }, pdf?: Buffer, documento?: { codigo: string | null; tipo: 'INFORME_TECNICO' | 'OFICIO'; version: number }) {
     if (!datos.creadaPorId || !datos.codigo || !datos.resumen) return;
     try {
       const destinatario = await this.prisma.usuario.findUnique({
@@ -2023,6 +2052,13 @@ export class SolicitudesService {
         subject: `Documento emitido · ${datos.codigo}`,
         text: mensaje.text,
         html: mensaje.html,
+        ...(pdf && documento ? {
+          attachments: [{
+            filename: `${documento.codigo}-${documento.tipo === 'OFICIO' ? 'oficio' : 'informe-tecnico'}-v${documento.version}.pdf`,
+            content: pdf,
+            contentType: 'application/pdf',
+          }],
+        } : {}),
       });
     } catch (error) {
       // La emisión ya quedó registrada; un fallo de SMTP no debe revertirla.
@@ -2030,6 +2066,31 @@ export class SolicitudesService {
         'No se pudo enviar el correo del documento emitido.',
         error instanceof Error ? error.message : undefined,
       );
+    }
+  }
+
+  private async enviarExpedienteCompletado(datos: { creadaPorId: string | null; codigo: string | null }) {
+    if (!datos.creadaPorId || !datos.codigo) return;
+    try {
+      const destinatario = await this.prisma.usuario.findUnique({
+        where: { id: datos.creadaPorId },
+        select: { email: true, nombre: true },
+      });
+      if (!destinatario) return;
+      const base = this.config.getOrThrow<string>('FRONTEND_URL').replace(/\/$/, '');
+      const mensaje = correoExpedienteCompletado({
+        nombre: destinatario.nombre,
+        codigo: datos.codigo,
+        enlace: `${base}/cuenta`,
+      });
+      await this.mail.send({
+        to: destinatario.email,
+        subject: `Expediente completado · ${datos.codigo}`,
+        text: mensaje.text,
+        html: mensaje.html,
+      });
+    } catch (error) {
+      this.logger.error('No se pudo enviar el correo de expediente completado.', error instanceof Error ? error.message : undefined);
     }
   }
 

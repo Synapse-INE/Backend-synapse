@@ -97,10 +97,46 @@ export class NotificacionesService {
       nombresProducto?: string[];
     },
   ) {
+    const terminos = terminosDeProductos(datos.nombresProducto ?? []);
+    if (terminos.length === 0) return;
+
+    // La solicitud no guarda una categoría explícita. La obtenemos de las filas
+    // importadas del INE y la combinamos con coincidencias de texto del catálogo
+    // del proveedor. Así una solicitud de laptops no llega a una farmacia.
+    const referencias = await tx.referenciaINE.findMany({
+      where: {
+        OR: terminos.flatMap((termino) => [
+          { producto: { contains: termino, mode: 'insensitive' as const } },
+          { caracteristicas: { contains: termino, mode: 'insensitive' as const } },
+        ]),
+      },
+      select: { categoriaOriginal: true },
+      take: 100,
+    });
+    const categorias = [...new Set(
+      referencias.map((referencia) => referencia.categoriaOriginal?.trim()).filter(Boolean),
+    )] as string[];
+    const productosRelacionados = await tx.productoProveedor.findMany({
+      where: {
+        estado: 'PUBLICADO',
+        OR: [
+          ...terminos.flatMap((termino) => [
+            { nombre: { contains: termino, mode: 'insensitive' as const } },
+            { descripcion: { contains: termino, mode: 'insensitive' as const } },
+            { categoriaOriginal: { contains: termino, mode: 'insensitive' as const } },
+          ]),
+          ...(categorias.length > 0 ? [{ categoriaOriginal: { in: categorias } }] : []),
+        ],
+      },
+      select: { proveedorId: true },
+    });
+    const proveedoresRelacionados = [...new Set(productosRelacionados.map((producto) => producto.proveedorId))];
+    if (proveedoresRelacionados.length === 0) return;
+
     const cuentas = await tx.usuario.findMany({
       where: {
         estado: 'ACTIVO',
-        proveedorId: { not: null },
+        proveedorId: { in: proveedoresRelacionados },
         proveedor: { estado: 'ACTIVO' },
         roles: { some: { rol: { codigo: 'PROVEEDOR' } } },
       },
@@ -238,4 +274,23 @@ export class NotificacionesService {
       })),
     });
   }
+}
+
+const PALABRAS_OMITIDAS = new Set([
+  'para', 'con', 'por', 'del', 'las', 'los', 'una', 'unos', 'unas', 'que', 'tipo', 'general',
+]);
+
+/** Términos concretos para relacionar un producto solicitado con los catálogos existentes. */
+function terminosDeProductos(productos: string[]) {
+  const terminos = new Set<string>();
+  for (const producto of productos) {
+    const nombre = producto.trim();
+    if (nombre.length >= 3) terminos.add(nombre);
+    for (const palabra of nombre.match(/[\p{L}\p{N}]+/gu) ?? []) {
+      if (palabra.length >= 3 && !PALABRAS_OMITIDAS.has(palabra.toLocaleLowerCase('es'))) {
+        terminos.add(palabra);
+      }
+    }
+  }
+  return [...terminos].slice(0, 24);
 }
