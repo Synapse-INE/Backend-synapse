@@ -140,6 +140,7 @@ describe('Authentication endpoints', () => {
       id: user.id,
       email: user.email,
       nombre: user.nombre,
+      proveedorId: null,
       roles: ['SOLICITANTE'],
     });
     expect(signIn.body.sessionToken).toBeUndefined();
