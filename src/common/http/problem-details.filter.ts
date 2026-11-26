@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
@@ -14,12 +15,31 @@ type ErrorBody = {
   message?: string | string[];
 };
 
-@Catch(HttpException)
+@Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
-  catch(exception: HttpException, host: ArgumentsHost) {
+  private readonly logger = new Logger(ProblemDetailsFilter.name);
+
+  catch(exceptionOriginal: unknown, host: ArgumentsHost) {
     const context = host.switchToHttp();
     const response = context.getResponse<Response>();
     const request = context.getRequest<Request>();
+    // Un error no previsto no revela su causa al cliente; queda en el log con el id de la petición.
+    const exception =
+      exceptionOriginal instanceof HttpException
+        ? exceptionOriginal
+        : new HttpException(
+            {
+              code: 'ERROR_INTERNO',
+              detail: 'Ocurrió un error inesperado. Intenta de nuevo más tarde.',
+            },
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
+    if (!(exceptionOriginal instanceof HttpException)) {
+      this.logger.error(
+        `Error no controlado (petición ${String(response.getHeader?.('x-request-id') ?? '-')})`,
+        exceptionOriginal instanceof Error ? exceptionOriginal.stack : undefined,
+      );
+    }
     const status = exception.getStatus();
     const body = exception.getResponse();
     const error = typeof body === 'string' ? { detail: body } : (body as ErrorBody);

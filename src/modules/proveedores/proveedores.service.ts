@@ -18,10 +18,7 @@ import {
   hoyIso,
   sumarMeses,
 } from './fechas-vigencia.js';
-import {
-  serializarProducto,
-  type ProductoConPrecios,
-} from './producto-proveedor.serial.js';
+import { serializarProducto } from './producto-proveedor.serial.js';
 
 @Injectable()
 export class ProveedoresService {
@@ -109,7 +106,7 @@ export class ProveedoresService {
     dto: ActualizarProductoProveedorDto,
     usuarioId: string,
   ) {
-    const proveedorId = this.exigirProveedor(actor);
+    this.exigirProveedor(actor);
     const existente = await this.prisma.productoProveedor.findUnique({
       where: { id: productoId },
       include: { precios: { orderBy: { createdAt: 'asc' } } },
@@ -173,7 +170,7 @@ export class ProveedoresService {
     productoId: string,
     usuarioId: string,
   ) {
-    const proveedorId = this.exigirProveedor(actor);
+    this.exigirProveedor(actor);
     const existente = await this.prisma.productoProveedor.findUnique({
       where: { id: productoId },
       include: { precios: { orderBy: { createdAt: 'asc' } } },

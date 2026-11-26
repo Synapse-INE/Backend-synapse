@@ -2,7 +2,7 @@
 
 ## Alcance
 
-El backend expone actualmente `GET /api/v1/salud`; todavía no existen endpoints de negocio. Los escenarios siguientes son criterios para las futuras APIs, no funcionalidades ya implementadas. Los casos que dependen de reglas de negocio deben confirmarse antes de convertirlos en contratos definitivos.
+El backend expone hoy 96 operaciones, descritas en OpenAPI; el estado de cada una está en [estado-y-siguientes-pasos.md](./estado-y-siguientes-pasos.md). Los escenarios siguientes son los criterios con los que se revisa cada endpoint y se convierten en pruebas automatizadas. Los casos que dependen de reglas de negocio deben confirmarse antes de convertirlos en contratos definitivos.
 
 El inventario técnico de la superficie actual está en [API & Service Communication Contracts](../.github/modernize/assessment/engines/facts/api-service-contracts.md).
 
@@ -65,4 +65,4 @@ El inventario técnico de la superficie actual está en [API & Service Communica
 
 ## Coordinación
 
-El flujo de coordinación puede usar estos escenarios para revisar formularios, preparar pruebas manuales y verificar que cada PR incluya evidencia. El flujo de implementación debe convertir los criterios aplicables en pruebas automatizadas junto con cada endpoint; ninguno de estos criterios implica que la ruta correspondiente ya exista.
+El flujo de coordinación puede usar estos escenarios para revisar formularios, preparar pruebas manuales y verificar que cada PR incluya evidencia. El flujo de implementación debe convertir los criterios aplicables en pruebas automatizadas junto con cada endpoint; cada criterio aplica a las rutas que ya existen y a las que se añadan.

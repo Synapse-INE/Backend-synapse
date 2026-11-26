@@ -1,7 +1,15 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
+  IsDateString,
+  IsEmail,
   IsIn,
+  IsIP,
+  IsUUID,
+  MinLength,
   IsInt,
   IsOptional,
   IsString,
@@ -62,6 +70,40 @@ export class ConsultaAuditoriaDto {
   texto?: string;
 
   @IsOptional()
+  @IsUUID()
+  actorId?: string;
+
+  @IsOptional()
+  @Transform(recortar)
+  @IsString()
+  @MaxLength(80)
+  accion?: string;
+
+  @IsOptional()
+  @Transform(recortar)
+  @IsString()
+  @MaxLength(80)
+  recurso?: string;
+
+  @IsOptional()
+  @Transform(recortar)
+  @IsString()
+  @MaxLength(80)
+  recursoId?: string;
+
+  @IsOptional()
+  @IsIP()
+  ip?: string;
+
+  @IsOptional()
+  @IsDateString()
+  desde?: string;
+
+  @IsOptional()
+  @IsDateString()
+  hasta?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -79,4 +121,33 @@ export class ConsultaAuditoriaDto {
 export class CambiarModalidadDto {
   @IsBoolean()
   activo!: boolean;
+}
+
+const ROLES = ['ADMIN', 'JEFE', 'TRABAJADOR_INE', 'PROVEEDOR', 'SOLICITANTE'] as const;
+
+export class AsignarRolesDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(5)
+  @IsIn(ROLES, { each: true })
+  roles!: string[];
+}
+
+export class CrearPersonalDto {
+  @Transform(recortar)
+  @IsEmail()
+  @MaxLength(320)
+  email!: string;
+
+  @Transform(recortar)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(160)
+  nombre!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(3)
+  @IsIn(['ADMIN', 'JEFE', 'TRABAJADOR_INE'], { each: true })
+  roles!: string[];
 }
