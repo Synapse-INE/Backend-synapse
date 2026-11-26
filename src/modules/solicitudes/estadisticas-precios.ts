@@ -1,4 +1,6 @@
 const ESCALA = 1000n;
+/** La boleta se registra en "unidad" cuando el producto de la solicitud no trae unidad de medida. */
+const UNIDAD_POR_DEFECTO = 'unidad';
 
 export type PrecioParaMedir = {
   precio: string;
@@ -106,7 +108,7 @@ function interpretar(nombre: string, unidad: string | null, incluidos: PuntoPrec
 }
 
 export function medirProducto(producto: ProductoMedible, precios: PrecioParaMedir[]): MedidasProducto {
-  const unidadProducto = producto.unidadMedida ? normalizar(producto.unidadMedida) : null;
+  const unidadProducto = normalizar(producto.unidadMedida || UNIDAD_POR_DEFECTO);
   const incluidos: PuntoPrecio[] = [];
   const excluidos: PrecioExcluido[] = [];
 
@@ -121,7 +123,7 @@ export function medirProducto(producto: ProductoMedible, precios: PrecioParaMedi
       excluidos.push({ ...punto, motivo: 'Otra moneda' });
       continue;
     }
-    if (!unidadProducto || !normalizado || normalizar(precio.unidadMedida) !== unidadProducto) {
+    if (!normalizado || normalizar(precio.unidadMedida) !== unidadProducto) {
       excluidos.push({ ...punto, motivo: 'Otra unidad de medida' });
       continue;
     }

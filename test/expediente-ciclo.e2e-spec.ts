@@ -221,6 +221,18 @@ describe('Ciclo completo de un expediente', () => {
     await solicitudes.agregarColaborador(creada.id, { usuarioId: apoyo.usuario.id }, jefe);
 
     await solicitudes.cambiarEstado(creada.id, { estado: 'EN_REVISION' }, analista);
+    const avisosProveedores = await prisma.avisoPrecioProveedor.count({
+      where: { solicitudId: creada.id },
+    });
+    if (avisosProveedores > 0) {
+      await expect(
+        solicitudes.cambiarEstado(creada.id, { estado: 'EN_INVESTIGACION' }, analista),
+      ).rejects.toMatchObject({ response: { code: 'PROVEEDORES_PENDIENTES' } });
+      await prisma.avisoPrecioProveedor.updateMany({
+        where: { solicitudId: creada.id },
+        data: { actualizadoEn: new Date() },
+      });
+    }
     await solicitudes.cambiarEstado(creada.id, { estado: 'EN_INVESTIGACION' }, analista);
     const conBoleta = await solicitudes.registrarConsulta(
       creada.id,
@@ -333,12 +345,19 @@ describe('Ciclo completo de un expediente', () => {
     expect(titulosEntidad).not.toContain('Nota interna');
 
     const delAnalista = await prisma.notificacion.findMany({
+      where: { usuarioId: analista.usuario.id, titulo: 'Te asignaron un expediente' },
+    });
+    const genericoAnalista = await prisma.notificacion.findMany({
       where: { usuarioId: analista.usuario.id, titulo: 'Expediente asignado' },
     });
     const delJefe = await prisma.notificacion.findMany({
-      where: { usuarioId: jefe.usuario.id, titulo: 'Expediente asignado' },
+      where: {
+        usuarioId: jefe.usuario.id,
+        titulo: { in: ['Expediente asignado', 'Te asignaron un expediente'] },
+      },
     });
     expect(delAnalista).toHaveLength(1);
+    expect(genericoAnalista).toHaveLength(0);
     expect(delJefe).toHaveLength(0);
 
     const leida = await avisos.marcarLeida(bandejaEntidad.notificaciones[0].id, solicitante);
@@ -350,7 +369,7 @@ describe('Ciclo completo de un expediente', () => {
     const personas = await personal.listar();
     const identificadores = personas.map((persona) => persona.id);
     expect(identificadores).toContain(analista.usuario.id);
-    expect(identificadores).not.toContain(jefe.usuario.id);
+    expect(identificadores).toContain(jefe.usuario.id);
     expect(identificadores).not.toContain(solicitante.usuario.id);
     expect(personas.every((persona) => !('email' in persona))).toBe(true);
   }, 30_000);

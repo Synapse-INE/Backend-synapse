@@ -65,9 +65,11 @@ describe('SolicitudesService', () => {
     },
     solicitudColaborador: {
       count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn(),
       deleteMany: vi.fn(),
     },
+    avisoPrecioProveedor: { findMany: vi.fn().mockResolvedValue([]) },
     productoSolicitud: { deleteMany: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
     solicitudHistorial: { create: vi.fn() },
     solicitudComentario: { create: vi.fn() },
@@ -107,6 +109,9 @@ describe('SolicitudesService', () => {
   const notificaciones = {
     avisar: vi.fn(),
     avisarJefesNuevaRecepcion: vi.fn(),
+    avisarProveedoresActualizarPrecios: vi.fn(),
+    avisarAsignacion: vi.fn(),
+    avisarColaboracion: vi.fn(),
   };
   let servicio: SolicitudesService;
 
@@ -273,6 +278,10 @@ describe('SolicitudesService', () => {
       tx,
       expect.objectContaining({ solicitudId: 'sol-1', actorId: 'u1' }),
     );
+    expect(notificaciones.avisarProveedoresActualizarPrecios).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ solicitudId: 'sol-1', nombresProducto: expect.any(Array) }),
+    );
   });
 
   it('un doble envío simultáneo no duplica la recepción', async () => {
@@ -297,6 +306,37 @@ describe('SolicitudesService', () => {
         metadatos: { de: 'RECIBIDA', a: 'RECHAZADA', motivo: 'Incompleta' },
       }),
     );
+  });
+
+  it('no entra a investigación mientras haya proveedores sin actualizar dentro del plazo', async () => {
+    tx.solicitudPrecio.findUnique.mockResolvedValue({ id: 'sol-1', estado: 'EN_REVISION', asignadaAId: 'w1' });
+    tx.avisoPrecioProveedor.findMany.mockResolvedValueOnce([
+      { venceEn: new Date(Date.now() + 86_400_000), actualizadoEn: new Date(), proveedor: { nombreComercial: 'A' } },
+      { venceEn: new Date(Date.now() + 86_400_000), actualizadoEn: null, proveedor: { nombreComercial: 'B' } },
+    ]);
+
+    await expect(
+      servicio.cambiarEstado('sol-1', { estado: 'EN_INVESTIGACION' }, personal),
+    ).rejects.toMatchObject({ response: { code: 'PROVEEDORES_PENDIENTES' } });
+    expect(tx.solicitudPrecio.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('entra a investigación si todos los proveedores actualizaron o si ya venció el plazo', async () => {
+    tx.solicitudPrecio.findUnique.mockResolvedValue({ id: 'sol-1', estado: 'EN_REVISION', asignadaAId: 'w1' });
+    tx.solicitudPrecio.updateMany.mockResolvedValue({ count: 1 });
+    tx.solicitudPrecio.findUniqueOrThrow.mockResolvedValue({ id: 'sol-1' });
+
+    tx.avisoPrecioProveedor.findMany.mockResolvedValueOnce([
+      { venceEn: new Date(Date.now() + 86_400_000), actualizadoEn: new Date(), proveedor: { nombreComercial: 'A' } },
+    ]);
+    await servicio.cambiarEstado('sol-1', { estado: 'EN_INVESTIGACION' }, personal);
+
+    tx.avisoPrecioProveedor.findMany.mockResolvedValueOnce([
+      { venceEn: new Date(Date.now() - 1000), actualizadoEn: null, proveedor: { nombreComercial: 'B' } },
+    ]);
+    await servicio.cambiarEstado('sol-1', { estado: 'EN_INVESTIGACION' }, personal);
+
+    expect(tx.solicitudPrecio.updateMany).toHaveBeenCalledTimes(2);
   });
 
   it('con responsable, otra persona del INE no avanza el expediente', async () => {
@@ -573,7 +613,7 @@ describe('SolicitudesService', () => {
 
     expect(notificaciones.avisar).toHaveBeenCalledWith(
       tx,
-      expect.objectContaining({ incluirCreador: false, titulo: 'Nota interna' }),
+      expect.objectContaining({ incluirCreador: false, titulo: 'Nota interna en el expediente' }),
     );
   });
 

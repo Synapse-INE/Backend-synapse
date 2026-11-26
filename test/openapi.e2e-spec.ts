@@ -105,6 +105,8 @@ describe('Documento OpenAPI', () => {
       '/api/v1/proveedores/yo/productos/{id}/confirmar-precio',
       { sesion: true, csrf: true },
     ],
+    ['get', '/api/v1/proveedores/yo/avisos-precio', { sesion: true, csrf: false }],
+    ['post', '/api/v1/proveedores/yo/avisos-precio/{id}/confirmar', { sesion: true, csrf: true }],
     ['get', '/api/v1/salud/listo', { sesion: false, csrf: false }],
     ['post', '/api/v1/auth/olvide-contrasena', { sesion: false, csrf: false }],
     ['post', '/api/v1/auth/restablecer-contrasena', { sesion: false, csrf: false }],

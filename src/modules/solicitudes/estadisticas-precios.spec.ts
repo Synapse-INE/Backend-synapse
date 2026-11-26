@@ -39,6 +39,16 @@ describe('medirProducto', () => {
     expect(medidas.media).toBe('11.333');
   });
 
+  it('compara en "unidad" cuando el producto no trae unidad de medida', () => {
+    const medidas = medirProducto({ ...producto, unidadMedida: null }, [
+      { precio: '10', moneda: 'GTQ', unidadMedida: 'unidad', esAtipico: false, fuente: 'A' },
+      { precio: '8', moneda: 'GTQ', unidadMedida: 'caja', esAtipico: false, fuente: 'B' },
+    ]);
+
+    expect(medidas.incluidos.map((punto) => punto.precio)).toEqual(['10.000']);
+    expect(medidas.media).toBe('10.000');
+  });
+
   it('no calcula medidas si no hay precios comparables', () => {
     const medidas = medirProducto(producto, []);
 
