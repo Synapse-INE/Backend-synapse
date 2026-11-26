@@ -14,7 +14,8 @@ export class PersonalIneController {
   @ApiProtegido({ csrf: false, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Listar los trabajadores activos que pueden recibir un expediente',
-    description: 'Devuelve identificador y nombre de quienes tienen el rol `TRABAJADOR_INE`. Sirve para que el jefe elija responsable. No incluye correo.',
+    description:
+      'Devuelve identificador y nombre del personal activo asignable (`TRABAJADOR_INE` o `JEFE`). Sirve para que el jefe elija responsable o colaborador. No incluye correo.',
   })
   @ApiOkResponse({
     schema: {

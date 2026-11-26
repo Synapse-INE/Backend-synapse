@@ -2,18 +2,25 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedRequest } from '../../common/auth/auth-context.js';
 import { assertResourceOwnership } from '../../common/auth/ownership.js';
 import { Prisma } from '../../infrastructure/database/generated/client.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { MailService } from '../../infrastructure/mail/mail.service.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
 import { NotificacionesService } from '../notificaciones/notificaciones.service.js';
 import { validarFormulariosParaEnvio } from '../formularios/formularios-envio.js';
+import { filtroPersonalAsignable } from '../personal-ine/personal-asignable.js';
 import { medirAtencion, type AtencionExpediente } from './atencion.js';
 import { borradorInforme } from './borrador-informe.js';
+import { correoExpedienteCompletado, correoInformeEmitido } from './correo-informe.js';
+import { crearPdfInforme } from './informe-pdf.js';
+import { AdjuntosService } from './adjuntos.service.js';
 import { medirExpediente } from './estadisticas-precios.js';
 import type {
   ActualizarSolicitudDto,
@@ -163,16 +170,21 @@ const ETAPAS_BOLETA = ['EN_INVESTIGACION', 'EN_ANALISIS'];
 
 @Injectable()
 export class SolicitudesService {
+  private readonly logger = new Logger(SolicitudesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly notificaciones: NotificacionesService,
+    private readonly config: ConfigService,
+    private readonly mail: MailService,
+    private readonly adjuntos: AdjuntosService,
   ) {}
 
   async crear(dto: CrearSolicitudDto, actor: Actor, ip?: string) {
     const institucion = await this.institucionDelActor(actor);
 
-    return this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const codigo = await this.siguienteCodigo(tx);
       const solicitud = await tx.solicitudPrecio.create({
         data: {
@@ -206,6 +218,7 @@ export class SolicitudesService {
       });
       return this.presentar(solicitud, actor);
     });
+    return resultado;
   }
 
   async listar(filtros: ListarSolicitudesDto, actor: Actor) {
@@ -245,6 +258,7 @@ export class SolicitudesService {
             select: { estadoNuevo: true, createdAt: true },
           },
           _count: { select: { productos: true } },
+          colaboradores: { select: { usuarioId: true } },
         },
       }),
     ]);
@@ -384,9 +398,15 @@ export class SolicitudesService {
         codigo: actual.codigo ?? id,
         tituloExpediente: actual.titulo,
       });
+      await this.notificaciones.avisarProveedoresActualizarPrecios(tx, {
+        solicitudId: id,
+        codigo: actual.codigo ?? id,
+        tituloExpediente: actual.titulo,
+        nombresProducto: (actual.productos ?? []).map((producto) => producto.nombre).filter(Boolean),
+      });
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
-        where: { id },
+          where: { id },
           select: this.detallePara(actor),
         }),
         actor,
@@ -400,7 +420,7 @@ export class SolicitudesService {
     actor: Actor,
     ip?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const actual = await tx.solicitudPrecio.findUnique({
         where: { id },
         select: { id: true, estado: true, codigo: true, creadaPorId: true, asignadaAId: true },
@@ -454,14 +474,22 @@ export class SolicitudesService {
         'Estado del expediente',
         `${actual.codigo} pasó de ${actual.estado} a ${dto.estado}.`,
       );
-      return this.presentar(
+      const solicitud = this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
-        where: { id },
+          where: { id },
           select: this.detallePara(actor),
         }),
         actor,
       );
+      return {
+        solicitud,
+        completada: dto.estado === 'COMPLETADA'
+          ? { creadaPorId: actual.creadaPorId, codigo: actual.codigo }
+          : null,
+      };
     });
+    if (resultado.completada) await this.enviarExpedienteCompletado(resultado.completada);
+    return resultado.solicitud;
   }
 
   async asignar(id: string, dto: AsignarSolicitudDto, actor: Actor, ip?: string) {
@@ -475,17 +503,13 @@ export class SolicitudesService {
         });
       }
       const persona = await tx.usuario.findFirst({
-        where: {
-          id: dto.usuarioId,
-          estado: 'ACTIVO',
-          roles: { some: { rol: { codigo: 'TRABAJADOR_INE' } } },
-        },
+        where: { id: dto.usuarioId, ...filtroPersonalAsignable },
         select: { id: true, nombre: true },
       });
       if (!persona) {
         throw new UnprocessableEntityException({
           code: 'PERSONA_NO_ASIGNABLE',
-          detail: 'La persona elegida tiene que ser un trabajador activo del INE.',
+          detail: 'La persona elegida tiene que ser un trabajador o jefe activo del INE.',
         });
       }
       await tx.solicitudPrecio.update({
@@ -507,12 +531,21 @@ export class SolicitudesService {
         ip,
         metadatos: { asignadaAId: persona.id },
       });
+      await this.notificaciones.avisarAsignacion(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        asignadoId: persona.id,
+        codigo: actual.codigo,
+        tituloExpediente: actual.titulo,
+      });
       await this.avisar(
         tx,
         { ...actual, asignadaAId: persona.id },
         actor,
         'Expediente asignado',
         `${actual.codigo} quedó a cargo de ${persona.nombre}.`,
+        true,
+        { incluirResponsable: false },
       );
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
@@ -604,15 +637,23 @@ export class SolicitudesService {
         ip,
         metadatos: { esInterno: interno },
       });
+      const personalComento = this.esPersonalINE(actor);
       await this.avisar(
         tx,
         actual,
         actor,
-        devolver ? 'Expediente devuelto' : interno ? 'Nota interna' : 'Nuevo comentario',
+        devolver
+          ? 'Expediente devuelto'
+          : interno
+            ? 'Nota interna en el expediente'
+            : personalComento
+              ? 'Nuevo comentario del INE'
+              : 'Observación de la entidad',
         devolver
           ? `${actual.codigo} volvió para corrección.`
-          : `${actual.codigo}: ${dto.contenido}`,
+          : `${actual.codigo}: ${dto.contenido.slice(0, 280)}`,
         !interno,
+        { incluirColaboradores: !interno },
       );
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
@@ -679,6 +720,12 @@ export class SolicitudesService {
         codigo: actual.codigo ?? id,
         tituloExpediente: actual.titulo,
         reenvio: true,
+      });
+      await this.notificaciones.avisarProveedoresActualizarPrecios(tx, {
+        solicitudId: id,
+        codigo: actual.codigo ?? id,
+        tituloExpediente: actual.titulo,
+        nombresProducto: (actual.productos ?? []).map((producto) => producto.nombre).filter(Boolean),
       });
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
@@ -968,13 +1015,13 @@ export class SolicitudesService {
 
   async emitirInforme(id: string, informeId: string, actor: Actor, ip?: string) {
     this.exigirPersonal(actor);
-    return this.prisma.$transaction(async (tx) => {
+    const emitido = await this.prisma.$transaction(async (tx) => {
       const actual = await this.cargarLegible(id, actor, tx);
       await this.exigirEncargado(tx, actual, actor);
       this.exigirEtapa(actual.estado, ['EN_INFORME'], 'Solo se emite un documento en EN_INFORME.');
       const informe = await tx.informeSolicitud.findFirst({
         where: { id: informeId, solicitudId: id },
-        select: { id: true, tipo: true, estado: true },
+        select: { id: true, tipo: true, estado: true, version: true, destinatario: true, resumen: true },
       });
       if (!informe) {
         throw new NotFoundException({
@@ -1038,14 +1085,43 @@ export class SolicitudesService {
         'Documento emitido',
         `${actual.codigo}: se emitió ${informe.tipo === 'OFICIO' ? 'el oficio' : 'el informe técnico'}.`,
       );
-      return this.presentar(
+      const solicitud = this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
           where: { id },
           select: this.detallePara(actor),
         }),
         actor,
       );
+      return {
+        solicitud,
+        aviso: {
+          creadaPorId: actual.creadaPorId,
+          codigo: actual.codigo,
+          tipo: informe.tipo,
+          resumen: (solicitud.informes ?? []).find((item) => item.id === informe.id)?.resumen ?? '',
+        },
+        documento: {
+          solicitudId: id,
+          informeId: informe.id,
+          codigo: actual.codigo,
+          tipo: informe.tipo,
+          version: informe.version,
+          destinatario: informe.destinatario,
+          resumen: informe.resumen,
+          estadisticas,
+          subidoPorId: actor.usuario.id,
+        },
+      };
     });
+    let pdf: Buffer | undefined;
+    try {
+      pdf = await crearPdfInforme(emitido.documento);
+      await this.adjuntos.guardarInformeEmitido({ ...emitido.documento, contenido: pdf });
+    } catch (error) {
+      this.logger.error('No se pudo guardar el PDF del documento emitido.', error instanceof Error ? error.message : undefined);
+    }
+    await this.enviarInformeEmitido(emitido.aviso, pdf, emitido.documento);
+    return emitido.solicitud;
   }
 
   async registrarEntrega(id: string, dto: RegistrarEntregaDto, actor: Actor, ip?: string) {
@@ -1439,17 +1515,13 @@ export class SolicitudesService {
         });
       }
       const persona = await tx.usuario.findFirst({
-        where: {
-          id: dto.usuarioId,
-          estado: 'ACTIVO',
-          roles: { some: { rol: { codigo: 'TRABAJADOR_INE' } } },
-        },
+        where: { id: dto.usuarioId, ...filtroPersonalAsignable },
         select: { id: true, nombre: true },
       });
       if (!persona) {
         throw new UnprocessableEntityException({
           code: 'PERSONA_NO_ASIGNABLE',
-          detail: 'El colaborador tiene que ser un trabajador activo del INE.',
+          detail: 'El colaborador tiene que ser un trabajador o jefe activo del INE.',
         });
       }
       await tx.solicitudColaborador.upsert({
@@ -1471,6 +1543,13 @@ export class SolicitudesService {
         recursoId: id,
         ip,
         metadatos: { usuarioId: persona.id },
+      });
+      await this.notificaciones.avisarColaboracion(tx, {
+        solicitudId: id,
+        actorId: actor.usuario.id,
+        colaboradorId: persona.id,
+        codigo: actual.codigo,
+        tituloExpediente: actual.titulo,
       });
       return this.presentar(
         await tx.solicitudPrecio.findUniqueOrThrow({
@@ -1656,6 +1735,16 @@ export class SolicitudesService {
         ? {
             consultas: { orderBy: { createdAt: 'asc' as const }, select: CONSULTA },
             validaciones: { orderBy: { createdAt: 'asc' as const }, select: VALIDACION },
+            avisosPrecio: {
+              orderBy: { avisadoEn: 'asc' as const },
+              select: {
+                id: true,
+                avisadoEn: true,
+                venceEn: true,
+                actualizadoEn: true,
+                proveedor: { select: { id: true, nombreComercial: true } },
+              },
+            },
           }
         : {}),
       informes: {
@@ -1693,9 +1782,7 @@ export class SolicitudesService {
           ...solicitud,
           consultas: [],
           validaciones: [],
-          informes: solicitud.estado === 'COMPLETADA'
-            ? (solicitud.informes ?? []).filter((informe) => informe.estado === 'EMITIDO')
-            : [],
+          informes: (solicitud.informes ?? []).filter((informe) => informe.estado === 'EMITIDO'),
           entregas: solicitud.estado === 'COMPLETADA' ? (solicitud.entregas ?? []) : [],
         };
     return { ...visible, atencion: medirAtencion(visible) };
@@ -1723,6 +1810,28 @@ export class SolicitudesService {
     }
   }
 
+  /** Pasados los dos días se avanza aunque falten proveedores; antes, solo si todos actualizaron. */
+  private async exigirProveedoresAlDia(tx: Prisma.TransactionClient, solicitudId: string) {
+    const avisos = await tx.avisoPrecioProveedor.findMany({
+      where: { solicitudId },
+      select: { venceEn: true, actualizadoEn: true, proveedor: { select: { nombreComercial: true } } },
+    });
+    const pendientes = avisos.filter((aviso) => !aviso.actualizadoEn);
+    if (pendientes.length === 0) return;
+    const vence = new Date(Math.max(...avisos.map((aviso) => aviso.venceEn.getTime())));
+    if (Date.now() >= vence.getTime()) return;
+    throw new ConflictException({
+      code: 'PROVEEDORES_PENDIENTES',
+      detail:
+        `Faltan ${pendientes.length} de ${avisos.length} proveedores por actualizar precios. `
+        + `Se podrá avanzar cuando todos actualicen o al vencer el plazo (${vence.toISOString()}).`,
+      errors: pendientes.map((aviso) => ({
+        field: 'proveedores',
+        message: aviso.proveedor.nombreComercial,
+      })),
+    });
+  }
+
   private async exigirAnalisisConfirmado(tx: Prisma.TransactionClient, solicitudId: string) {
     const productos = await tx.productoSolicitud.findMany({
       where: { solicitudId },
@@ -1748,6 +1857,9 @@ export class SolicitudesService {
     solicitudId: string,
     destino: string,
   ) {
+    if (destino === 'EN_INVESTIGACION') {
+      await this.exigirProveedoresAlDia(tx, solicitudId);
+    }
     if (destino === 'EN_INFORME') {
       await this.exigirAnalisisConfirmado(tx, solicitudId);
     }
@@ -1877,7 +1989,15 @@ export class SolicitudesService {
     return `PR-${anio}-${String(ultimo).padStart(6, '0')}`;
   }
 
-  private avisar(
+  private async idsColaboradores(tx: Prisma.TransactionClient, solicitudId: string) {
+    const filas = await tx.solicitudColaborador.findMany({
+      where: { solicitudId },
+      select: { usuarioId: true },
+    });
+    return filas.map((fila) => fila.usuarioId);
+  }
+
+  private async avisar(
     tx: Prisma.TransactionClient,
     actual: {
       id: string;
@@ -1889,16 +2009,90 @@ export class SolicitudesService {
     titulo: string,
     detalle: string,
     incluirCreador = true,
-  ) {
-    return this.notificaciones.avisar(tx, {
+    opciones?: { incluirResponsable?: boolean; incluirColaboradores?: boolean },
+  ): Promise<void> {
+    const incluirResponsable = opciones?.incluirResponsable !== false;
+    const destinatariosExtra = opciones?.incluirColaboradores !== false
+      ? await this.idsColaboradores(tx, actual.id)
+      : [];
+    await this.notificaciones.avisar(tx, {
       solicitudId: actual.id,
       actorId: actor.usuario.id,
       creadaPorId: actual.creadaPorId,
-      asignadaAId: actual.asignadaAId,
+      asignadaAId: incluirResponsable ? actual.asignadaAId : null,
+      destinatariosExtra,
       titulo,
       detalle,
       incluirCreador,
     });
+  }
+
+  private async enviarInformeEmitido(datos: {
+    creadaPorId: string | null;
+    codigo: string | null;
+    tipo: 'INFORME_TECNICO' | 'OFICIO';
+    resumen: string;
+  }, pdf?: Buffer, documento?: { codigo: string | null; tipo: 'INFORME_TECNICO' | 'OFICIO'; version: number }) {
+    if (!datos.creadaPorId || !datos.codigo || !datos.resumen) return;
+    try {
+      const destinatario = await this.prisma.usuario.findUnique({
+        where: { id: datos.creadaPorId },
+        select: { email: true, nombre: true },
+      });
+      if (!destinatario) return;
+      const base = this.config.getOrThrow<string>('FRONTEND_URL').replace(/\/$/, '');
+      const mensaje = correoInformeEmitido({
+        nombre: destinatario.nombre,
+        codigo: datos.codigo,
+        tipo: datos.tipo,
+        resumen: datos.resumen,
+        enlace: `${base}/cuenta`,
+      });
+      await this.mail.send({
+        to: destinatario.email,
+        subject: `Documento emitido · ${datos.codigo}`,
+        text: mensaje.text,
+        html: mensaje.html,
+        ...(pdf && documento ? {
+          attachments: [{
+            filename: `${documento.codigo}-${documento.tipo === 'OFICIO' ? 'oficio' : 'informe-tecnico'}-v${documento.version}.pdf`,
+            content: pdf,
+            contentType: 'application/pdf',
+          }],
+        } : {}),
+      });
+    } catch (error) {
+      // La emisión ya quedó registrada; un fallo de SMTP no debe revertirla.
+      this.logger.error(
+        'No se pudo enviar el correo del documento emitido.',
+        error instanceof Error ? error.message : undefined,
+      );
+    }
+  }
+
+  private async enviarExpedienteCompletado(datos: { creadaPorId: string | null; codigo: string | null }) {
+    if (!datos.creadaPorId || !datos.codigo) return;
+    try {
+      const destinatario = await this.prisma.usuario.findUnique({
+        where: { id: datos.creadaPorId },
+        select: { email: true, nombre: true },
+      });
+      if (!destinatario) return;
+      const base = this.config.getOrThrow<string>('FRONTEND_URL').replace(/\/$/, '');
+      const mensaje = correoExpedienteCompletado({
+        nombre: destinatario.nombre,
+        codigo: datos.codigo,
+        enlace: `${base}/cuenta`,
+      });
+      await this.mail.send({
+        to: destinatario.email,
+        subject: `Expediente completado · ${datos.codigo}`,
+        text: mensaje.text,
+        html: mensaje.html,
+      });
+    } catch (error) {
+      this.logger.error('No se pudo enviar el correo de expediente completado.', error instanceof Error ? error.message : undefined);
+    }
   }
 
   private historial(

@@ -125,4 +125,33 @@ export class ProveedoresController {
       request.auth.usuario.id,
     );
   }
+
+  @Get('avisos-precio')
+  @ApiProtegido({ csrf: false, roles: 'PROVEEDOR' })
+  @ApiOperation({
+    summary: 'Solicitudes que esperan la actualización de precios del proveedor',
+    description:
+      'Solo incluye avisos sin atender y dentro del plazo de dos días. Registrar o confirmar un precio del catálogo los atiende todos.',
+  })
+  @ApiOkResponse({ schema: { example: { avisos: [] } } })
+  listarAvisosPrecio(@Req() request: AuthenticatedRequest) {
+    return this.proveedores.listarAvisosPrecio(request.auth.ownership);
+  }
+
+  @Post('avisos-precio/:id/confirmar')
+  @HttpCode(HttpStatus.OK)
+  @ApiProtegido({ csrf: true, roles: 'PROVEEDOR' })
+  @ApiOperation({
+    summary: 'Confirmar que los precios del catálogo están al día',
+    description: 'Atiende el aviso sin cambiar precios; devuelve los avisos que siguen pendientes.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({ schema: { example: { avisos: [] } } })
+  @ApiProblema(404, 'El aviso no existe o es de otro proveedor (`AVISO_NO_ENCONTRADO`).')
+  confirmarAvisoPrecio(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.proveedores.confirmarAvisoPrecio(request.auth.ownership, id);
+  }
 }

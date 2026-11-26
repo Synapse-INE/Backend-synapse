@@ -41,7 +41,10 @@ export function dondePublicacion(
   if (filtro.categoria === SIN_CATEGORIA) {
     donde.OR = [{ categoriaOriginal: null }, { categoriaOriginal: '' }];
   } else if (filtro.categoria) {
-    donde.categoriaOriginal = filtro.categoria;
+    // Las categorías que se muestran al público se recortan al agruparlas. La
+    // búsqueda debe admitir las filas históricas que conservaron espacios o
+    // diferencias de mayúsculas en la importación.
+    donde.categoriaOriginal = { contains: filtro.categoria.trim(), mode: 'insensitive' };
   }
   if (filtro.producto) donde.producto = { contains: filtro.producto, mode: 'insensitive' };
   if (filtro.nog) donde.nog = { equals: filtro.nog, mode: 'insensitive' };

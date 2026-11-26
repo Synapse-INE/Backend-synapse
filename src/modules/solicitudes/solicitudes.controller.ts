@@ -227,9 +227,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/estado')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Cambiar el estado de una solicitud',
     description:
@@ -237,7 +237,7 @@ export class SolicitudesController {
       '`RECHAZADA` sale de cualquiera de esas etapas, salvo los estados terminales. ' +
       'Pasar a `EN_INFORME` exige un precio confirmado por el analista en cada producto. ' +
       'Pasar a `EN_ENTREGA` exige el documento del expediente emitido. Cerrar exige al menos una entrega con constancia. ' +
-      'El jefe asigna primero a un trabajador. Después solo esa persona, un colaborador o un administrador puede avanzar. ' +
+      'El jefe asigna primero a un trabajador (puede asignarse a sí mismo). Después solo la responsable, un colaborador, el jefe asignado o un administrador puede avanzar. ' +
       'La devolución a la entidad no se hace aquí: va en el comentario con `devolver`. El `motivo` queda en el historial.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -264,7 +264,7 @@ export class SolicitudesController {
   @ApiOperation({
     summary: 'Asignar el expediente a un trabajador',
     description:
-      'Solo el jefe. La persona debe estar activa y tener el rol `TRABAJADOR_INE`. No cambia el estado. ' +
+      'Solo el jefe. La persona debe estar activa y tener el rol `TRABAJADOR_INE` o `JEFE`. No cambia el estado. ' +
       'No se asigna un expediente cerrado.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -329,9 +329,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/consultas')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Registrar una boleta de investigación',
     description:
@@ -355,8 +355,8 @@ export class SolicitudesController {
   }
 
   @Patch(':id/consultas/:consultaId')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Corregir una boleta ya registrada',
     description:
@@ -379,9 +379,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/atipicos')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Marcar o retirar un precio atípico',
     description:
@@ -400,9 +400,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/validaciones')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Registrar el precio de referencia que valida el analista',
     description:
@@ -441,9 +441,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/informes')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Crear un borrador de informe técnico u oficio',
     description:
@@ -461,9 +461,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/informes/:informeId/emitir')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Emitir un borrador de informe u oficio',
     description:
@@ -483,9 +483,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/entregas')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Registrar una entrega oficial',
     description:
@@ -505,9 +505,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/pausar')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Poner el expediente en espera del INE',
     description:
@@ -522,9 +522,9 @@ export class SolicitudesController {
   }
 
   @Post(':id/reanudar')
-  @Roles('TRABAJADOR_INE', 'ADMIN')
+  @Roles('JEFE', 'TRABAJADOR_INE', 'ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiProtegido({ csrf: true, roles: 'TRABAJADOR_INE, ADMIN' })
+  @ApiProtegido({ csrf: true, roles: 'JEFE, TRABAJADOR_INE, ADMIN' })
   @ApiOperation({
     summary: 'Reanudar un expediente en espera',
     description: 'Vuelve al estado que tenía antes de la pausa.',
@@ -571,7 +571,7 @@ export class SolicitudesController {
   @ApiOperation({
     summary: 'Agregar un colaborador',
     description:
-      'Solo el jefe. El colaborador es un trabajador activo. Ve el expediente y puede trabajarlo junto con el responsable. El responsable sigue siendo uno.',
+      'Solo el jefe. El colaborador es un trabajador o jefe activo. Ve el expediente y puede trabajarlo junto con el responsable. El responsable sigue siendo uno.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiProblema(409, 'Ya es el responsable (`YA_ES_RESPONSABLE`) o el expediente está cerrado (`SOLICITUD_CERRADA`).')

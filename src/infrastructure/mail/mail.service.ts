@@ -8,6 +8,7 @@ export interface OutgoingMail {
   subject: string;
   text: string;
   html?: string;
+  attachments?: Array<{ filename: string; content: Buffer; contentType: string }>;
 }
 
 @Injectable()
@@ -44,6 +45,7 @@ export class MailService {
       subject: message.subject,
       text: message.text,
       ...(message.html ? { html: message.html } : {}),
+      ...(message.attachments ? { attachments: message.attachments } : {}),
     });
   }
 

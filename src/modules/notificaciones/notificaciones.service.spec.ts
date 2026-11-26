@@ -21,8 +21,11 @@ describe('NotificacionesService', () => {
     },
   };
   const tx = {
-    notificacion: { createMany: vi.fn() },
+    notificacion: { createMany: vi.fn(), create: vi.fn() },
     usuario: { findMany: vi.fn() },
+    avisoPrecioProveedor: { upsert: vi.fn() },
+    referenciaINE: { findMany: vi.fn() },
+    productoProveedor: { findMany: vi.fn() },
   };
   let servicio: NotificacionesService;
 
@@ -52,6 +55,60 @@ describe('NotificacionesService', () => {
     );
   });
 
+  it('avisa a proveedores activos para actualizar precios al recibir una solicitud', async () => {
+    tx.referenciaINE.findMany.mockResolvedValue([{ categoriaOriginal: 'Útiles escolares' }]);
+    tx.productoProveedor.findMany.mockResolvedValue([{ proveedorId: 'p1' }]);
+    tx.usuario.findMany.mockResolvedValue([
+      { id: 'prov-u1', proveedorId: 'p1' },
+      { id: 'prov-u2', proveedorId: 'p1' },
+    ]);
+
+    await servicio.avisarProveedoresActualizarPrecios(tx as never, {
+      solicitudId: 'sol-1',
+      codigo: 'PR-2026-000001',
+      tituloExpediente: 'Útiles',
+      nombresProducto: ['Lápiz', 'Papel'],
+    });
+
+    expect(tx.usuario.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          proveedorId: { in: ['p1'] },
+          roles: { some: { rol: { codigo: 'PROVEEDOR' } } },
+        }),
+      }),
+    );
+    const { data } = tx.notificacion.createMany.mock.calls[0][0];
+    expect(data.map((fila: { usuarioId: string }) => fila.usuarioId).sort()).toEqual([
+      'prov-u1',
+      'prov-u2',
+    ]);
+    expect(data[0].titulo).toBe('Actualiza tus precios de referencia');
+    expect(data[0].detalle).toContain('Lápiz');
+    expect(tx.avisoPrecioProveedor.upsert).toHaveBeenCalledTimes(1);
+    const { create } = tx.avisoPrecioProveedor.upsert.mock.calls[0][0];
+    expect(create.venceEn.getTime() - create.avisadoEn.getTime()).toBe(2 * 24 * 60 * 60 * 1000);
+  });
+
+  it('no avisa a proveedores sin productos relacionados con la solicitud', async () => {
+    tx.referenciaINE.findMany.mockResolvedValue([{ categoriaOriginal: 'Equipo de cómputo' }]);
+    tx.productoProveedor.findMany.mockResolvedValue([{ proveedorId: 'tecnologia-1' }]);
+    tx.usuario.findMany.mockResolvedValue([{ id: 'prov-tec', proveedorId: 'tecnologia-1' }]);
+
+    await servicio.avisarProveedoresActualizarPrecios(tx as never, {
+      solicitudId: 'sol-1',
+      codigo: 'PR-2026-000001',
+      nombresProducto: ['Laptop'],
+    });
+
+    expect(tx.usuario.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ proveedorId: { in: ['tecnologia-1'] } }) }),
+    );
+    expect(tx.notificacion.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ usuarioId: 'prov-tec' })] }),
+    );
+  });
+
   it('avisa a los jefes activos cuando entra una solicitud nueva', async () => {
     tx.usuario.findMany.mockResolvedValue([{ id: 'jefe-1' }, { id: 'jefe-2' }]);
 
@@ -69,6 +126,24 @@ describe('NotificacionesService', () => {
       'jefe-2',
     ]);
     expect(data[0].titulo).toBe('Nueva solicitud recibida');
+  });
+
+  it('avisarAsignacion notifica solo al nuevo responsable', async () => {
+    tx.notificacion.create.mockResolvedValue({ id: 'n1' });
+
+    await servicio.avisarAsignacion(tx as never, {
+      solicitudId: 'sol-1',
+      actorId: 'jefe-1',
+      asignadoId: 'w2',
+      codigo: 'PR-2026-000001',
+      tituloExpediente: 'Laptops',
+    });
+
+    expect(tx.notificacion.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ usuarioId: 'w2', titulo: 'Te asignaron un expediente' }),
+      }),
+    );
   });
 
   it('al avisar omite a quien hizo la acción y, si es nota interna, a quien creó el expediente', async () => {

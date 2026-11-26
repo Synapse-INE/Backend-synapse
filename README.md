@@ -1,6 +1,171 @@
-# Portal de Precios de Referencia
+# Synapse — Portal de Precios de Referencia
 
-Backend del Portal de Precios de Referencia, desarrollado con NestJS y TypeScript. Utiliza PostgreSQL como motor de persistencia y Prisma para el modelado de datos y la gestión de migraciones.
+> **Demo en línea:** [synapse.realiquezisaac.workers.dev](https://synapse.realiquezisaac.workers.dev/)
+
+> **Antes de probar la demo:** La API puede suspenderse tras un período de inactividad. Por eso, la primera solicitud puede tardar hasta un minuto mientras el sistema se reactiva; espere y vuelva a cargar la página si es necesario.
+>
+> **Correo electrónico:** El proveedor bloqueó temporalmente el envío por motivos de seguridad, así que los correos no están funcionando en la demo. En pruebas comprobamos que el sistema sí puede enviarlos cuando SMTP está configurado. Para habilitarlo, el equipo del INE o el cliente debe configurar las variables de entorno SMTP del backend; no se requieren cambios en el código.
+
+Plataforma para consultar precios de referencia y gestionar solicitudes de investigación de precios. La solución incluye una interfaz web en React y Vite, una API en NestJS y una base de datos PostgreSQL administrada con Prisma.
+
+## Problema que resuelve y público objetivo
+
+El portal centraliza la consulta del catálogo de precios de referencia del INE y la gestión de solicitudes de investigación de precios. El personal autorizado puede tramitar expedientes, documentar consultas y validaciones, y generar exportaciones. Está dirigido a personal del INE —administración, jefaturas y analistas—, proveedores y entidades solicitantes.
+
+La plataforma apoya los procesos de consulta y gestión; no sustituye las decisiones del personal del INE ni determina automáticamente un precio oficial. Los datos deben interpretarse conforme a las definiciones y metadatos publicados por el INE.
+
+### Acceso a la demo
+
+Las cuentas siguientes son de demostración y pertenecen a una base de evaluación. No las utilice para información real. Copie y pegue cada contraseña sin espacios adicionales.
+
+| Rol | Correo | Contraseña |
+|---|---|---|
+| Administración | `demo.admin@evaluacion.invalid` | `1p;05H72!y;c` |
+| Jefatura | `demo.jefe@evaluacion.invalid` | `C7a34J+A!UUF` |
+| Analista | `demo.analista@evaluacion.invalid` | `18D0bL8nug!n` |
+| Proveedor | `demo.proveedor@evaluacion.invalid` | `)58!)-W@d2CT` |
+| Solicitante | `demo.solicitante@evaluacion.invalid` | `o%)1531%>I_=` |
+
+### Datos utilizados
+
+| Conjunto de datos | Uso | Procedencia y fecha |
+|---|---|---|
+| Catálogo oficial de precios de referencia del INE, en formato Excel | Fuente principal para las búsquedas de productos y precios de referencia del portal. | Portal público del [INE](https://www.ine.gob.gt/). El archivo importado se descargó el lunes 23 de noviembre de 2026. |
+| Registros de evaluación | Cuentas sintéticas para probar los distintos permisos y flujos. | Base de evaluación; no representa personas ni entidades reales. |
+
+## Despliegue de la demo
+
+### Arquitectura
+
+```text
+Navegador
+  └─ Cloudflare Workers + Static Assets (React/Vite)
+       └─ /api/* → Worker reenvía las solicitudes a la API NestJS en Render
+                      ├─ PostgreSQL 18 con pgvector en Neon
+                      └─ SMTP configurable → destinatarios de los correos
+```
+
+El reenvío de `/api/*` permite que el navegador use el mismo dominio para la interfaz y la API, lo cual es necesario para las cookies de sesión. El frontend se sirve como archivos estáticos; la API, la base de datos y el servicio de correo se alojan por separado.
+
+### Tecnologías del despliegue
+
+| Tecnología | Uso |
+|---|---|
+| Cloudflare Workers y Static Assets | Publicación del frontend y reenvío de `/api/*` a la API. |
+| Wrangler 4 | Herramienta de despliegue en Cloudflare. |
+| React y Vite | Interfaz web. |
+| NestJS sobre Node.js | API del backend. |
+| Render (Web Service gratuito) | Alojamiento de la API. Puede suspenderse por inactividad. |
+| Neon (PostgreSQL 18) y pgvector | Base de datos administrada y extensión vectorial de PostgreSQL. |
+| Prisma 7 | Acceso a datos, generación del cliente y migraciones. |
+| GitHub | Repositorio desde el que Render obtiene el backend. |
+| SMTP | Envío configurable de correos de la aplicación. Actualmente deshabilitado en la demo. |
+
+El proyecto utiliza servicios con planes gratuitos en la nube; la disponibilidad, límites y tiempos de respuesta dependen de esos proveedores. El entorno local descrito más abajo usa PostgreSQL 16 con Docker Compose, mientras que la base desplegada usa PostgreSQL 18 en Neon.
+
+### Despliegue de la API en Render
+
+- Repositorio: `Synapse-INE/Backend-synapse`; rama: `develop`.
+- Tipo de servicio: Web Service gratuito.
+- Build: `npm ci --include=dev && npm run build`
+- Start: `npm run start:prod`
+- Variables configuradas: `NODE_ENV`, `NODE_VERSION`, `DATABASE_URL`, `CORS_ORIGINS`, `SESSION_TTL_SECONDS`, `SESSION_COOKIE_NAME`, `SESSION_COOKIE_SAME_SITE`, `SWAGGER_ENABLED`, `FRONTEND_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` y `SMTP_FROM`.
+
+`DATABASE_URL` es una variable de entorno privada y no debe copiarse a este README ni publicarse. La API usa la conexión con pooler de Neon; para migraciones e importación se emplea la conexión directa, sin `-pooler`.
+
+### Despliegue del frontend en Cloudflare Workers
+
+El Worker reenvía las rutas de API al servicio de Render (`https://synapse-api-ug91.onrender.com`). La configuración de assets de Wrangler sirve `dist` como aplicación de página única y ejecuta el Worker primero para `/api/*`. En producción, `.env.production` define `VITE_API_URL=/` para que el frontend use el mismo dominio.
+
+Desde la carpeta `Frontend-Synapse`:
+
+```powershell
+npm ci
+npm run build
+npx wrangler login
+npx wrangler deploy
+```
+
+La URL pública del frontend es `https://synapse.realiquezisaac.workers.dev/`. Configure `CORS_ORIGINS` en Render con ese origen, sin `/` al final.
+
+### Base de datos desplegada en Neon
+
+La base de evaluación se creó como `synapse_demo` en AWS US East 1 y utiliza la extensión `vector`. En el despliegue se aplicaron las migraciones con `npm run db:migrate:deploy` y se prepararon cuentas con `npm run seed:demo` y las variables de entorno `DEMO_SEED_*` y `DEMO_*_PASSWORD`. La importación del catálogo se ejecuta desde una computadora con el repositorio del backend; el archivo XLSX no se sube a Render.
+
+No agregue cadenas de conexión, contraseñas de la base ni llaves de acceso al repositorio o a este documento.
+
+### Envío de correos mediante SMTP
+
+La API genera los mensajes de la aplicación —por ejemplo, los enlaces de verificación de cuenta— y puede enviarlos mediante SMTP. El envío está actualmente deshabilitado en la demo porque el proveedor bloqueó temporalmente la emisión por motivos de seguridad. Las pruebas confirmaron que el sistema sí puede enviar correos cuando cuenta con una configuración SMTP válida. Para habilitarlo, el equipo del INE o el cliente debe configurar las variables de entorno del servicio y desplegar de nuevo la API.
+
+Como referencia, para configurar Brevo:
+
+1. Cree una cuenta en Brevo y verifique el número de teléfono.
+2. Verifique la dirección que se utilizará como remitente.
+3. En la configuración SMTP de Brevo, obtenga el valor de inicio de sesión y genere una clave SMTP.
+4. En Render, defina estas variables de entorno para el servicio de la API:
+
+   ```dotenv
+   SMTP_HOST=smtp-relay.brevo.com
+   SMTP_PORT=2525
+   SMTP_SECURE=false
+   SMTP_USER=<login-smtp-de-brevo>
+   SMTP_PASSWORD=<clave-smtp-de-brevo>
+   SMTP_FROM=Portal de Precios <remitente-verificado>
+   FRONTEND_URL=https://synapse.realiquezisaac.workers.dev
+   ```
+
+`SMTP_USER` es el inicio de sesión SMTP de Brevo, no la dirección del remitente. `SMTP_PASSWORD` es una credencial secreta y no debe subirse al repositorio. `SMTP_FROM` debe utilizar una dirección verificada. Guarde los cambios y redespliegue la API.
+
+Los mensajes pueden llegar a la carpeta de spam. El plan gratuito de Brevo permite hasta 300 envíos al día. Las cuentas `@evaluacion.invalid` son direcciones reservadas y no reciben correo; para probar los flujos de correo se necesita una dirección real.
+
+### Limitaciones conocidas de la demo
+
+- Turnstile usa una clave de prueba, sin protección real contra bots.
+- No se configuró almacenamiento persistente para adjuntos. Si se guardan en disco, pueden perderse cuando el servicio se reinicia o se suspende.
+
+
+### Importar el catálogo Excel en producción
+
+La importación se ejecuta desde una computadora con el repositorio del backend; el archivo no se sube a Render. Los siguientes comandos son para PowerShell.
+
+**Requisitos:** dependencias instaladas (`npm ci`), cliente de Prisma generado (`npm run db:generate`), migraciones aplicadas y archivo `.xlsx` con los encabezados en la fila 2 y los datos desde la fila 3. Se lee la primera hoja del libro.
+
+**Columnas obligatorias:** Correlativo, Modalidad, NOG, Evento, Producto, Características, Presentación, Precio de referencia Q, Fecha de publicación, Categoría y Vigencia hasta.
+
+1. Entrar a la carpeta del backend:
+
+   ```powershell
+   cd <ruta-del-proyecto>\backend
+   ```
+2. Definir `DATABASE_URL` con la conexión **directa** (sin `-pooler`) a la base `synapse_demo`. No pegue ni guarde el valor de conexión en el README:
+
+   ```powershell
+   $env:DATABASE_URL="<conexion-directa-de-neon>"
+   ```
+3. Verificar el destino. El host debe terminar en `neon.tech` sin `-pooler` y la ruta debe ser `/synapse_demo`:
+
+   ```powershell
+   ([uri]$env:DATABASE_URL).Host
+   ([uri]$env:DATABASE_URL).AbsolutePath
+   ```
+4. Antes de importar, comprobar en `src/modules/referencias-ine/importador-ine.service.ts` que la transacción de cada lote dentro de `importar` termina con estas opciones:
+
+   ```typescript
+   return { aceptadas, observaciones, rechazadas };
+   }, { maxWait: 20000, timeout: 600000 });
+   ```
+
+   El límite predeterminado de 5 segundos puede ser insuficiente para una transacción con una base remota.
+5. Ejecutar la importación:
+
+   ```powershell
+   npm run import:ine -- --archivo "C:\ruta\al\catalogo.xlsx"
+   ```
+6. Espere a que finalice sin cerrar la terminal. El comando no muestra progreso; en Neon se puede observar cómo aumentan las filas de importación en bloques de 100.
+7. Revise el resultado en la terminal y en la aplicación publicada. El estado `PARCIAL` indica filas con observaciones o rechazadas.
+
+**Si la importación falla:** el importador reconoce cada archivo por su contenido. Si ya existe un registro de ese archivo, incluso con estado `FALLIDA`, no lo vuelve a cargar. Los lotes completados antes del error permanecen guardados. Antes de reintentar, revise y elimine el registro fallido y sus filas asociadas únicamente en la base correcta; no ejecute dos importaciones del mismo archivo a la vez.
 
 ## Tecnologías
 
@@ -56,7 +221,7 @@ La API utiliza el prefijo `/api/v1` y actualmente ofrece:
 | `POST`  | `/notificaciones/:id/leer`                 | Marca un aviso propio como leído.                                  | Sesión y CSRF                        |
 | `POST`  | `/notificaciones/leer-todas`               | Marca como leídos los avisos propios pendientes.                   | Sesión y CSRF                        |
 
-Esta tabla lista los endpoints principales; el contrato completo son **96 operaciones**, todas descritas en el documento OpenAPI (ver más abajo), incluidas las de adjuntos, colaboradores, pausa y cancelación de solicitudes. Lo que queda para cerrar el backend está en [docs/backlog-backend.md](./docs/backlog-backend.md).
+Esta tabla lista los endpoints principales; el contrato completo son **96 operaciones**, todas descritas en el documento OpenAPI (ver más abajo), incluidas las de adjuntos, colaboradores, pausa y cancelación de solicitudes. 
 
 Endpoints de cuentas, administración, formularios y catálogo añadidos al cerrar el backend:
 
@@ -110,7 +275,7 @@ El esquema Prisma y sus migraciones definen entidades para:
 
 La migración de identidad conserva las asignaciones existentes al transformar el rol genérico `USUARIO` en `SOLICITANTE`. Los importes de referencia utilizan precisión decimal para preservar los valores de la fuente.
 
-El esquema de persistencia no implica que cada entidad tenga una ruta HTTP disponible. Los endpoints de administración de usuarios, auditoría, adjuntos y formularios todavía no forman parte de la API implementada.
+El esquema de persistencia no implica que cada entidad tenga una ruta HTTP disponible. Las rutas implementadas se describen en las tablas de API de este README y en el contrato OpenAPI; las entidades sin una ruta documentada no deben considerarse accesibles por HTTP.
 
 ### Importación del catálogo INE
 
@@ -120,11 +285,11 @@ El catálogo puede procesarse mediante el comando de consola `npm run import:ine
 npm run import:ine -- --archivo "C:\ruta\al\catalogo.xlsx" --usuario-id <uuid-del-actor>
 ```
 
-El parámetro `--usuario-id` es opcional para una carga técnica. La importación se ejecuta por consola; no hay una ruta HTTP de carga de archivos.
+El parámetro `--usuario-id` es opcional para una carga técnica. Este comando permite importar desde consola. Además, la API ofrece la ruta administrativa `POST /api/v1/importaciones-ine` para cargar un libro XLSX; la ruta y el CLI registran y procesan importaciones, pero esta guía de despliegue describe el uso del CLI desde la computadora del equipo.
 
 ### Componentes de integración y autorización
 
-El proyecto incluye un adaptador SMTP configurable y componentes compartidos para autorización por rol y propiedad de recursos. Estos componentes constituyen la base técnica para los flujos de negocio; las rutas HTTP de invitaciones, administración y solicitudes no están incluidas en la versión actual.
+El proyecto incluye un adaptador SMTP configurable y componentes compartidos para autorización por rol y propiedad de recursos. Los flujos de correo requieren que SMTP esté configurado; en la demo se utiliza Brevo mediante el puerto 2525.
 
 ### Registro, verificación e invitaciones
 
@@ -139,6 +304,35 @@ El proyecto incluye un adaptador SMTP configurable y componentes compartidos par
 | `POST /api/v1/solicitantes/:usuarioId/aprobar` · `/rechazar` | `ADMIN` | Activa la cuenta o la desactiva; se audita revisor, fecha e IP. |
 
 Un solicitante no puede iniciar sesión hasta verificar su correo **y** ser aprobado. Los tokens se guardan solo como hash SHA-256 y caducan (`EMAIL_TOKEN_TTL_HOURS`, `INVITATION_TTL_HOURS`). Configura `FRONTEND_URL` (enlaces de los correos) y, opcionalmente, `REGISTRO_DOMINIOS_PERMITIDOS` (por ejemplo `gob.gt`). El DPI/CUI no se recolecta.
+
+### Cuentas para evaluación
+
+El perfil opcional `evaluation` crea cuentas sintéticas para los cinco roles del sistema: `ADMIN`, `JEFE`, `TRABAJADOR_INE`, `PROVEEDOR` y `SOLICITANTE`. Los usuarios proveedor y solicitante reciben también sus relaciones de perfil necesarias para acceder a las vistas correspondientes. Sus correos usan el dominio reservado `.invalid` y no reciben mensajes.
+
+Este seed no se ejecuta al iniciar la API. Para usarlo, configura secretos únicos de al menos 12 caracteres en las variables `DEMO_*_PASSWORD`, define `POSTGRES_DB` y `DEMO_SEED_DATABASE_NAME` con el mismo nombre dedicado terminado en `_evaluation` o `_demo`, y establece:
+
+```dotenv
+DEMO_SEED_ENABLED=true
+DEMO_SEED_ENVIRONMENT=isolated-evaluation
+DEMO_SEED_CONFIRMATION=SEED_ISOLATED_EVALUATION_DATABASE
+```
+
+Desde la carpeta `backend`, ejecuta `docker compose -p synapse-evaluation --env-file .env -f infra/docker-compose.yml --profile evaluation up --build -d` solo con una base y volumen dedicados. El nombre del proyecto mantiene los volúmenes separados del despliegue normal; si ya hay otro backend local, deténlo antes porque ambos usan los puertos 3000 y 5432. El seed crea las cuentas una vez; en ejecuciones posteriores verifica el estado y los roles sin cambiar contraseñas ni reparar registros alterados. El perfil normal de Compose no ejecuta esta tarea. No habilites estas variables para una base compartida o con datos reales.
+
+Para desarrollo local con menos consumo de memoria, configura un archivo ignorado `.env.evaluation` con `POSTGRES_PORT=5433`, las variables anteriores, credenciales distintas por rol y `DATABASE_URL` apuntando a `localhost:5433`. Inicia solo PostgreSQL con `docker compose -p synapse-evaluation --env-file .env.evaluation -f infra/docker-compose.yml up -d database`. Una vez, carga el archivo en el entorno de PowerShell y ejecuta:
+
+```powershell
+Get-Content .env.evaluation | ForEach-Object {
+  if ($_ -match '^([^#=]+)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], 'Process')
+  }
+}
+npm run db:generate
+npm run db:migrate:deploy
+npm run seed:demo
+```
+
+Para iniciar o reiniciar la API después, usa `npm run start:evaluation`. Así se mantiene la API local en el puerto 3000 sin reconstruir su imagen.
 
 ### Solicitudes de precio (S.00)
 
@@ -277,9 +471,9 @@ npx prisma validate
 
 ## Pendiente
 
-Lo que queda del backend (almacenamiento de adjuntos para producción, importación de productos del proveedor, búsqueda externa e IA, y las decisiones del INE que bloquean reglas) está priorizado en [docs/backlog-backend.md](./docs/backlog-backend.md), con alcance, reglas y dependencias de cada ítem. El catálogo también se puede cargar y revisar por HTTP (`/importaciones-ine`, `/alias-modalidad`), con el mismo importador del CLI.
+Lo que queda del backend (almacenamiento de adjuntos para producción, importación de productos del proveedor, búsqueda externa e IA, y las decisiones del INE que bloquean reglas). El catálogo también se puede cargar y revisar por HTTP (`/importaciones-ine`, `/alias-modalidad`), con el mismo importador del CLI.
 
-Para enviar correo fuera de pruebas configura `SMTP_HOST` y `SMTP_FROM`; `SMTP_USER` y `SMTP_PASSWORD` son opcionales, pero deben darse juntos. `SMTP_SECURE=false` exige STARTTLS y `true` usa TLS implícito. Antes de habilitar tráfico real detrás de un proxy, configura `TRUSTED_PROXY_CIDRS` con los rangos correctos y verifica la IP efectiva del cliente: la auditoría y los límites de peticiones dependen de ella.
+Para enviar correo fuera de pruebas configura `SMTP_HOST` y `SMTP_FROM`; `SMTP_USER` y `SMTP_PASSWORD` son opcionales, pero deben darse juntos. `SMTP_SECURE=false` exige STARTTLS y `true` usa TLS implícito. En la demo, Brevo está configurado como relay SMTP en el puerto 2525. Antes de habilitar tráfico real detrás de un proxy, configura `TRUSTED_PROXY_CIDRS` con los rangos correctos y verifica la IP efectiva del cliente: la auditoría y los límites de peticiones dependen de ella.
 
 ## Estructura principal
 

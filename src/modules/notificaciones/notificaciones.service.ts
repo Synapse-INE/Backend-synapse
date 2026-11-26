@@ -6,6 +6,8 @@ import type { ListarNotificacionesDto } from './notificaciones.dto.js';
 
 type Actor = AuthenticatedRequest['auth'];
 
+export const PLAZO_PROVEEDORES_MS = 2 * 24 * 60 * 60 * 1000;
+
 const AVISO = {
   id: true,
   titulo: true,
@@ -20,6 +22,8 @@ export type Aviso = {
   actorId: string;
   creadaPorId?: string | null;
   asignadaAId?: string | null;
+  /** Otros destinatarios (p. ej. colaboradores del expediente). */
+  destinatariosExtra?: string[];
   titulo: string;
   detalle: string;
   /** Una nota interna no llega a quien creó el expediente. */
@@ -80,6 +84,94 @@ export class NotificacionesService {
     return { actualizadas: cambio.count };
   }
 
+  /**
+   * Nueva solicitud de cotización: pide a los proveedores activos que actualicen precios y abre
+   * el plazo de espera que bloquea el avance de la solicitud (ver `PLAZO_PROVEEDORES_MS`).
+   */
+  async avisarProveedoresActualizarPrecios(
+    tx: Prisma.TransactionClient,
+    datos: {
+      solicitudId: string;
+      codigo: string;
+      tituloExpediente?: string | null;
+      nombresProducto?: string[];
+    },
+  ) {
+    const terminos = terminosDeProductos(datos.nombresProducto ?? []);
+    if (terminos.length === 0) return;
+
+    // La solicitud no guarda una categoría explícita. La obtenemos de las filas
+    // importadas del INE y la combinamos con coincidencias de texto del catálogo
+    // del proveedor. Así una solicitud de laptops no llega a una farmacia.
+    const referencias = await tx.referenciaINE.findMany({
+      where: {
+        OR: terminos.flatMap((termino) => [
+          { producto: { contains: termino, mode: 'insensitive' as const } },
+          { caracteristicas: { contains: termino, mode: 'insensitive' as const } },
+        ]),
+      },
+      select: { categoriaOriginal: true },
+      take: 100,
+    });
+    const categorias = [...new Set(
+      referencias.map((referencia) => referencia.categoriaOriginal?.trim()).filter(Boolean),
+    )] as string[];
+    const productosRelacionados = await tx.productoProveedor.findMany({
+      where: {
+        estado: 'PUBLICADO',
+        OR: [
+          ...terminos.flatMap((termino) => [
+            { nombre: { contains: termino, mode: 'insensitive' as const } },
+            { descripcion: { contains: termino, mode: 'insensitive' as const } },
+            { categoriaOriginal: { contains: termino, mode: 'insensitive' as const } },
+          ]),
+          ...(categorias.length > 0 ? [{ categoriaOriginal: { in: categorias } }] : []),
+        ],
+      },
+      select: { proveedorId: true },
+    });
+    const proveedoresRelacionados = [...new Set(productosRelacionados.map((producto) => producto.proveedorId))];
+    if (proveedoresRelacionados.length === 0) return;
+
+    const cuentas = await tx.usuario.findMany({
+      where: {
+        estado: 'ACTIVO',
+        proveedorId: { in: proveedoresRelacionados },
+        proveedor: { estado: 'ACTIVO' },
+        roles: { some: { rol: { codigo: 'PROVEEDOR' } } },
+      },
+      select: { id: true, proveedorId: true },
+    });
+    if (cuentas.length === 0) return;
+
+    const avisadoEn = new Date();
+    const venceEn = new Date(avisadoEn.getTime() + PLAZO_PROVEEDORES_MS);
+    const proveedores = [...new Set(cuentas.map((cuenta) => cuenta.proveedorId as string))];
+    for (const proveedorId of proveedores) {
+      await tx.avisoPrecioProveedor.upsert({
+        where: { solicitudId_proveedorId: { solicitudId: datos.solicitudId, proveedorId } },
+        create: { solicitudId: datos.solicitudId, proveedorId, avisadoEn, venceEn },
+        update: { avisadoEn, venceEn, actualizadoEn: null },
+      });
+    }
+
+    const productos = (datos.nombresProducto ?? []).filter(Boolean);
+    const listaProductos =
+      productos.length > 0
+        ? ` Productos: ${productos.slice(0, 8).join('; ')}${productos.length > 8 ? '…' : ''}.`
+        : '';
+    const detalle = `${datos.codigo}${datos.tituloExpediente ? `: ${datos.tituloExpediente}` : ''}. `
+      + `Tienes 2 días para actualizar los precios de tu catálogo o confirmar que están al día.${listaProductos}`;
+    await tx.notificacion.createMany({
+      data: cuentas.map((cuenta) => ({
+        usuarioId: cuenta.id,
+        solicitudId: datos.solicitudId,
+        titulo: 'Actualiza tus precios de referencia',
+        detalle: detalle.slice(0, 500),
+      })),
+    });
+  }
+
   /** Bandeja del jefe: nueva solicitud en estado RECIBIDA (sin responsable aún). */
   async avisarJefesNuevaRecepcion(
     tx: Prisma.TransactionClient,
@@ -116,6 +208,51 @@ export class NotificacionesService {
     });
   }
 
+  avisarColaboracion(
+    tx: Prisma.TransactionClient,
+    datos: {
+      solicitudId: string;
+      actorId: string;
+      colaboradorId: string;
+      codigo: string;
+      tituloExpediente?: string | null;
+    },
+  ) {
+    if (datos.actorId === datos.colaboradorId) return Promise.resolve();
+    return tx.notificacion.create({
+      data: {
+        usuarioId: datos.colaboradorId,
+        solicitudId: datos.solicitudId,
+        titulo: 'Te sumaron a un expediente',
+        detalle: `${datos.codigo}${datos.tituloExpediente ? `: ${datos.tituloExpediente}` : ''}. Colaboras en el trámite.`,
+      },
+      select: { id: true },
+    });
+  }
+
+  /** Aviso directo al nuevo responsable (p. ej. al asignar desde el jefe). */
+  avisarAsignacion(
+    tx: Prisma.TransactionClient,
+    datos: {
+      solicitudId: string;
+      actorId: string;
+      asignadoId: string;
+      codigo: string;
+      tituloExpediente?: string | null;
+    },
+  ) {
+    if (datos.actorId === datos.asignadoId) return Promise.resolve();
+    return tx.notificacion.create({
+      data: {
+        usuarioId: datos.asignadoId,
+        solicitudId: datos.solicitudId,
+        titulo: 'Te asignaron un expediente',
+        detalle: `${datos.codigo}${datos.tituloExpediente ? `: ${datos.tituloExpediente}` : ''}. Eres el responsable.`,
+      },
+      select: { id: true },
+    });
+  }
+
   /** Quien hizo la acción no se avisa a sí mismo. */
   avisar(tx: Prisma.TransactionClient, aviso: Aviso) {
     const destinatarios = new Set<string>();
@@ -123,6 +260,9 @@ export class NotificacionesService {
       destinatarios.add(aviso.creadaPorId);
     }
     if (aviso.asignadaAId) destinatarios.add(aviso.asignadaAId);
+    for (const id of aviso.destinatariosExtra ?? []) {
+      if (id) destinatarios.add(id);
+    }
     destinatarios.delete(aviso.actorId);
     if (destinatarios.size === 0) return Promise.resolve();
     return tx.notificacion.createMany({
@@ -134,4 +274,23 @@ export class NotificacionesService {
       })),
     });
   }
+}
+
+const PALABRAS_OMITIDAS = new Set([
+  'para', 'con', 'por', 'del', 'las', 'los', 'una', 'unos', 'unas', 'que', 'tipo', 'general',
+]);
+
+/** Términos concretos para relacionar un producto solicitado con los catálogos existentes. */
+function terminosDeProductos(productos: string[]) {
+  const terminos = new Set<string>();
+  for (const producto of productos) {
+    const nombre = producto.trim();
+    if (nombre.length >= 3) terminos.add(nombre);
+    for (const palabra of nombre.match(/[\p{L}\p{N}]+/gu) ?? []) {
+      if (palabra.length >= 3 && !PALABRAS_OMITIDAS.has(palabra.toLocaleLowerCase('es'))) {
+        terminos.add(palabra);
+      }
+    }
+  }
+  return [...terminos].slice(0, 24);
 }
