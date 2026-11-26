@@ -176,7 +176,7 @@ export class ImportadorINEService {
           }
 
           return { aceptadas, observaciones, rechazadas };
-        });
+        }, { maxWait: 20000, timeout: 600000 });
 
         filasAceptadas += resumenLote.aceptadas;
         filasConObservaciones += resumenLote.observaciones;
