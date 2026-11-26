@@ -17,7 +17,7 @@ describe('AuthService', () => {
       create: vi.fn(),
       updateMany: vi.fn(),
     },
-    eventoAuditoria: { create: vi.fn() },
+    eventoAuditoria: { create: vi.fn(), count: vi.fn().mockResolvedValue(0) },
     $transaction: vi.fn(),
   };
   let authService: AuthService;

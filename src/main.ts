@@ -4,6 +4,7 @@ import type { Express } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { correlacion } from './common/http/correlacion.middleware.js';
 import { crearValidationPipe } from './common/http/validation-pipe.js';
 import { ConfigService } from '@nestjs/config';
 import { isValidTrustedProxyCidr } from './infrastructure/security/trusted-proxy-cidr.js';
@@ -21,6 +22,7 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
   app.enableCors({ origin: allowedOrigins, credentials: true });
+  app.use(correlacion);
   app.use(cookieParser());
   const trustedProxyCidrs = config
     .getOrThrow<string>('TRUSTED_PROXY_CIDRS')

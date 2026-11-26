@@ -242,6 +242,7 @@ model Usuario {
   proveedoresConfirmados  ProveedorSolicitud[]      @relation("ProveedorSolicitudConfirmador")
   aliasModalidadRevisados AliasModalidad[]          @relation("AliasModalidadRevisadoPor")
   tokensVerificacion      TokenVerificacionCorreo[]
+  tokensRestablecimiento  TokenRestablecimientoContrasena[]
   sesiones                SesionUsuario[]
 
   @@index([proveedorId])
@@ -322,6 +323,20 @@ model TokenVerificacionCorreo {
   @@map("tokens_verificacion_correo")
 }
 
+model TokenRestablecimientoContrasena {
+  id          String    @id @default(uuid()) @db.Uuid
+  usuarioId   String    @map("usuario_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash") @db.VarChar(64)
+  venceEn     DateTime  @map("vence_en") @db.Timestamptz(6)
+  consumidoEn DateTime? @map("consumido_en") @db.Timestamptz(6)
+  creadaEn    DateTime  @default(now()) @map("creada_en") @db.Timestamptz(6)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, venceEn])
+  @@map("tokens_restablecimiento_contrasena")
+}
+
 model SesionUsuario {
   id             String    @id @default(uuid()) @db.Uuid
   usuarioId      String    @map("usuario_id") @db.Uuid
@@ -388,6 +403,7 @@ model EventoAuditoria {
 
   @@index([actorId, creadoEn])
   @@index([recurso, recursoId, creadoEn])
+  @@index([accion, creadoEn])
   @@map("eventos_auditoria")
 }
 
@@ -971,7 +987,7 @@ model CotizacionProducto {
   createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   cotizacion        CotizacionImportacion @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
-  productoSolicitud ProductoSolicitud     @relation(fields: [productoSolicitudId], references: [id], onDelete: Restrict)
+  productoSolicitud ProductoSolicitud     @relation(fields: [productoSolicitudId], references: [id], onDelete: Cascade)
 
   @@unique([cotizacionId, productoSolicitudId])
   @@index([productoSolicitudId])

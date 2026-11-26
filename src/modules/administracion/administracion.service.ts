@@ -164,11 +164,36 @@ export class AdministracionService {
 
   async listarAuditoria(opciones: {
     texto?: string;
+    actorId?: string;
+    accion?: string;
+    recurso?: string;
+    recursoId?: string;
+    ip?: string;
+    desde?: string;
+    hasta?: string;
     pagina: number;
     limite: number;
   }) {
     const texto = opciones.texto?.trim();
-    const where: Prisma.EventoAuditoriaWhereInput = texto
+    const filtros: Prisma.EventoAuditoriaWhereInput[] = [];
+    if (opciones.actorId) filtros.push({ actorId: opciones.actorId });
+    if (opciones.accion) {
+      filtros.push({ accion: { equals: opciones.accion, mode: 'insensitive' } });
+    }
+    if (opciones.recurso) {
+      filtros.push({ recurso: { equals: opciones.recurso, mode: 'insensitive' } });
+    }
+    if (opciones.recursoId) filtros.push({ recursoId: opciones.recursoId });
+    if (opciones.ip) filtros.push({ ip: opciones.ip });
+    if (opciones.desde || opciones.hasta) {
+      filtros.push({
+        creadoEn: {
+          ...(opciones.desde ? { gte: new Date(opciones.desde) } : {}),
+          ...(opciones.hasta ? { lte: new Date(opciones.hasta) } : {}),
+        },
+      });
+    }
+    const porTexto: Prisma.EventoAuditoriaWhereInput = texto
       ? {
           OR: [
             { accion: { contains: texto, mode: 'insensitive' } },
@@ -179,6 +204,7 @@ export class AdministracionService {
           ],
         }
       : {};
+    const where: Prisma.EventoAuditoriaWhereInput = { AND: [porTexto, ...filtros] };
 
     const [total, eventos] = await Promise.all([
       this.prisma.eventoAuditoria.count({ where }),
