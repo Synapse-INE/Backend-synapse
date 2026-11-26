@@ -218,6 +218,7 @@ export class SolicitudesService {
       });
       return this.presentar(solicitud, actor);
     });
+    return resultado;
   }
 
   async listar(filtros: ListarSolicitudesDto, actor: Actor) {

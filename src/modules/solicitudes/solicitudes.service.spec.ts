@@ -143,7 +143,7 @@ describe('SolicitudesService', () => {
   it('crea un borrador ligado al usuario y su institución, con productos numerados', async () => {
     tx.solicitudPrecio.create.mockResolvedValue({ id: 'sol-1' });
 
-    await servicio.crear(
+    const resultado = await servicio.crear(
       {
         titulo: 'Guantes',
         descripcion: 'Compra',
@@ -153,6 +153,7 @@ describe('SolicitudesService', () => {
       '203.0.113.1',
     );
 
+    expect(resultado).toMatchObject({ id: 'sol-1' });
     const { data } = tx.solicitudPrecio.create.mock.calls[0][0];
     expect(data).toMatchObject({
       estado: 'BORRADOR',
