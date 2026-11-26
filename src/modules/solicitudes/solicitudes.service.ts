@@ -11,6 +11,7 @@ import { Prisma } from '../../infrastructure/database/generated/client.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { AuditoriaService } from '../auditoria/auditoria.service.js';
 import { NotificacionesService } from '../notificaciones/notificaciones.service.js';
+import { validarFormulariosParaEnvio } from '../formularios/formularios-envio.js';
 import { filtroPersonalAsignable } from '../personal-ine/personal-asignable.js';
 import { medirAtencion, type AtencionExpediente } from './atencion.js';
 import { borradorInforme } from './borrador-informe.js';

@@ -106,7 +106,7 @@ export class ProveedoresService {
     dto: ActualizarProductoProveedorDto,
     usuarioId: string,
   ) {
-    this.exigirProveedor(actor);
+    const proveedorId = this.exigirProveedor(actor);
     const existente = await this.prisma.productoProveedor.findUnique({
       where: { id: productoId },
       include: { precios: { orderBy: { createdAt: 'asc' } } },
@@ -170,7 +170,7 @@ export class ProveedoresService {
     productoId: string,
     usuarioId: string,
   ) {
-    this.exigirProveedor(actor);
+    const proveedorId = this.exigirProveedor(actor);
     const existente = await this.prisma.productoProveedor.findUnique({
       where: { id: productoId },
       include: { precios: { orderBy: { createdAt: 'asc' } } },
